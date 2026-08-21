@@ -7,3 +7,6 @@
 # cargo-mutants scratch trees
 /mutants.out/
 /mutants.out.old/
+
+# local scratch driver; laconic#9azt builds the real CLI
+/crates/laconic-packs/examples/scan.rs
