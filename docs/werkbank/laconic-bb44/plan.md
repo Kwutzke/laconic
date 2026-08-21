@@ -21,12 +21,13 @@ The order is: toolchain and grammar facts, the two interfaces, the pipeline's ou
 split by what they consume, the remaining packs, `fix`, the surface, acceptance. Each transition is
 forced by something, and the forcing constraint is the part worth reading.
 
-**Grammar facts come before anything that consumes them.** Two constraints stack here. C9: no
-`rustup`, `cargo` or `tree-sitter` CLI on this machine, so nothing builds until they are installed.
-The design's bounded claim: which mechanism each language uses for pack concerns 5 through 10 is
-design intent against parsers nobody ran. A probe that parses one fixture per language at the pinned
-grammar version and dumps the shapes those concerns need is what converts intent into a table, and
-every pack downstream reads that table rather than re-deriving it.
+**Grammar facts come before anything that consumes them.** Two constraints stacked here. C9: no
+toolchain, so nothing builds. And the design's per-language mechanisms were intent against parsers
+nobody had run. Both are discharged — the toolchain is installed and the probe suite in
+`laconic-grammars` confirms concerns 2, 5, 6, 8, 9 and 11 at the pins, with the table on
+`laconic#bb44`. **Every pack subtask reads that table rather than re-deriving it, and the probe is
+the pin check C10 requires: when a grammar version moves, what fails is the mapping a pack was
+written against.**
 
 **The pack trait and the engine pipeline are built together, with Go as the only pack.** A trait with
 no implementation is a guess about what an implementation needs. Go is the choice because its doc
@@ -37,10 +38,12 @@ the engine.
 report is untestable, and the reporter is a contract (design §5) rather than formatting, so it cannot
 be retrofitted around rules already written against an ad-hoc shape.
 
-**Rules split by what they consume, not by tier.** One group needs only the stripped comment body
-(pack concern 7). The other needs subject facts, attachment, and the §7 ERROR-node suppression
-partition. That line is where a reviewer can accept the deny-list matching and reject the subject
-handling, which is the test for whether a split is real.
+**Rules split by what they consume, not by tier.** Seven need only the stripped comment body (pack
+concern 7). Six need subject facts, attachment, and the §7 ERROR-node suppression partition. The
+remaining two, `ignoreReason` and `deadIgnore`, consume neither — they read surviving ignore
+directives at reconcile — and they ship with the second group, because that is the subtask where the
+reconcile stage is first exercised by a rule. The first line is where a reviewer can accept the
+deny-list matching and reject the subject handling, which is the test for whether a split is real.
 
 **The four remaining packs come after the rules.** AC3 requires each carve-out's negative test to
 fail when its carve-out is removed. A test cannot fail that way while the rule it guards against does
@@ -68,9 +71,10 @@ recorded on `laconic#bb44`.
 
 **Consequence: the pack interface grows an eleventh concern** — file-level declared symbols with
 their visibility. Concern 8 describes the subject; it cannot answer whether an arbitrary name is
-private in this file. The design states that a pack needing a concern absent from the list is
-information rather than a defect, so the count moves and the probe confirms concern 11 alongside the
-other ten.
+private in this file. The design enumerated ten and named that enumeration as charter constraint 4's
+protection, so this is an amendment to it rather than a reading of it. What licenses the amendment is
+the handover's test — "the first pack needs a concern that is not on the list … that is information,
+not a defect" — and the design now states eleven.
 
 **What this makes harder, and what would reverse it:** concern 11 is the concern with the least
 evidence behind it and the widest per-language spread — Python has no declaration-level visibility at
@@ -87,8 +91,10 @@ What exploration found that the design did not know.
 `block_comment` each carry an optional `doc` field holding a `doc_comment` child, plus optional
 `outer` and `inner` fields holding marker nodes. C8 names three mechanisms — distinct node type,
 marker text, position. Rust is a fourth: a field on an ordinary comment node. A pack that reads
-`///` as marker text would classify `////////` as a doc comment and make it permanently immune to
-`banner`; reading the field cannot, because the grammar decides.
+`///` as marker text would classify `////////` as Doc kind, which costs `banner` its gate tier and
+its Delete fix on exactly the input it exists to catch — the rule still reports it at warn tier with
+a Rewrite fix, so the cost is a demotion rather than immunity. Reading the field cannot misclassify
+it, because the grammar decides.
 
 **Rust and Java emit no `comment` node, and TS/JS emit two.** Rust and Java produce `line_comment`
 and `block_comment`; TypeScript and JavaScript produce `comment` **and** `html_comment`. Concern 2
@@ -108,19 +114,22 @@ grammar crates and the `tree-sitter` runtime declare exactly one shared normal d
 with no version conflict. C10's pin is per-grammar and correct; what actually has to hold is the
 parser ABI, and nothing in the dependency graph will report its violation.
 
-**Two of the six grammars are more than a year older than the rest** — `tree-sitter-java` 0.23.5
-(published 2024-12-21) and `tree-sitter-typescript` 0.23.2 (2024-11-11), against 0.25.0 for Go,
-Python and JavaScript. Whatever the probe records for those two is the likeliest to move under a pin
-bump.
+**The age gap is a parser ABI gap, and the runtime spans it.** `tree-sitter-java` 0.23.5 (published
+2024-12-21) and `tree-sitter-typescript` 0.23.2 (2024-11-11) report **ABI 14**; Go, Python, Rust and
+JavaScript report **ABI 15**. The pinned runtime loads both, so the mixed pin is viable rather than
+merely untested — and those two are the pins likeliest to move something when bumped.
 
-**Python's docstring shape is a probe target, not a fact.** `node-types.json` at
-`tree-sitter-python` v0.25.0 types `expression_statement`'s children as `expression` — a supertype —
-plus `assignment`, `augmented_assignment` and `yield`. Whether the query `(expression_statement
-(string))` matches through that supertype is what the probe settles. Nothing in this plan asserts it.
+**Python's docstring supertype question is settled: there is no hop.** `node-types.json` types
+`expression_statement`'s children as the `expression` supertype, but supertypes are hidden in the
+tree — the concrete `string` is a direct child, so `(expression_statement (string))` matches with no
+traversal. The positional qualifier is the part that needs care: the docstring is the first
+**non-extra** child of the scope, and a shebang comment sits before it at module level without
+displacing it.
 
-**AC2's fixture location is excluded by the default config.** Fixtures live under
-`testdata/<lang>/<rule>/`, and `testdata/` is a default path exclusion. The fixture runner clears
-path exclusions or it scans nothing.
+**A subject's body node is not always its statement container.** Go interposes a `statement_list`
+between `block` and the statements, so concern 9 counts the named children of `statement_list` for Go
+and of `block` or `statement_block` everywhere else. A pack that counts `block`'s children directly
+gives Go a statement count of one and makes `density`'s ratio meaningless.
 
 **The design's per-block dispatch count is wrong, and it is wrong by three rules rather than one.**
 `density` dispatches per subject. `ignoreReason` and `deadIgnore` are evaluated at reconcile rather

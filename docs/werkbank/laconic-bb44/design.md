@@ -61,19 +61,38 @@ the invariant and its consequence.
 The charter `laconic#4wvf` carries constraints 1–7. Two more come from what exploration established:
 
 **C8 — how a doc comment is identified varies by language across three unrelated mechanisms, so a
-pack cannot declare a single one.** Some grammars expose a distinct node type. Some require reading
-marker text off an ordinary comment node. Some settle it only by position, with no lexical signal at
-all: in tree-sitter-python a docstring is `(expression_statement (string))`, and that pattern means
-docstring only when it is the first statement in a module, class, or function body — a string
-expression anywhere else is a string ([tree-sitter discussion
-#2470](https://github.com/tree-sitter/tree-sitter/discussions/2470) establishes the node pattern; the
-first-statement rule is Python's own semantics, not that thread's). Go is positional in the same way,
-by a comment sitting directly above a top-level declaration with no blank line.
+pack cannot declare a single one.** Confirmed by the probe against all seven pinned grammars. None
+of them makes the doc **comment node** a distinct type: tree-sitter-rust does define a `doc_comment`
+node, but it is a child of an ordinary `line_comment` or `block_comment` rather than a comment node
+a pack could extract, which is the field mechanism below and not a fourth one.
+
+**By a field on an ordinary comment node.** tree-sitter-rust gives `line_comment` and `block_comment`
+an optional `doc` field plus `outer` and `inner` marker fields, so `///`, `//!` and `/**` are all
+answered structurally and a pack never reads the marker. That matters because a pack reading `///`
+lexically would classify `////////` as Doc kind, which costs `banner` its gate tier and its Delete
+fix on exactly the input it exists to catch — the rule still reports it at warn tier with a Rewrite
+fix, so this is a demotion rather than the immunity an earlier draft claimed.
+
+**By marker text on an ordinary comment node** — Java and TS/JS, whose grammars expose no field.
+The test is not `/**`: that also matches the empty comment `/**/` and every `/****…****/` banner, and
+classifying either as Doc costs `banner` its gate tier and its Delete fix on exactly the input it
+exists to catch. It is `/**` followed by a character that is neither `*` nor `/`. Rust needs no such
+care — the probe confirms its grammar declines both forms structurally.
+
+**By position, with no lexical signal at all:** in tree-sitter-python a docstring is
+`(expression_statement (string))`, and that pattern means docstring only when it is the first
+non-comment statement in a module, class, or function body — a string expression anywhere else is a
+string ([tree-sitter discussion #2470](https://github.com/tree-sitter/tree-sitter/discussions/2470)
+establishes the node pattern; the first-statement rule is Python's own semantics, not that
+thread's). Go is positional in the same way, by a comment sitting directly above a top-level
+declaration with no blank line.
 
 A pack therefore supplies a **predicate**, not a declaration, and that predicate returns the doc
 comment *together with the subject it documents* — because three rules need facts about the subject
-and not just the comment. Which mechanism each language uses is a value the pack carries, not a
-premise this design rests on.
+and not just the comment. Which way that predicate looks is itself per-language: everywhere but
+Python the doc comment documents what follows it, and a docstring documents the scope that contains
+it. Which mechanism each language uses is a value the pack carries, not a premise this design rests
+on.
 
 **C9 — no Rust toolchain exists on the build machine.** `rustup`, `cargo` and the `tree-sitter` CLI
 are all absent; Apple clang 21 is present, so grammar C sources compile once the toolchain is
@@ -112,9 +131,10 @@ dispositions then handles Python correctly without containing any Python.
 
 **Subject.** What a block is attached to, described by the pack rather than handed over as a raw
 syntax node. A subject reports the identifiers it binds (`restate`), the length of its body
-(`docbloat`, `density`), and its visibility together with the symbols it exposes (`implInInterface`).
-Handing a rule a raw node puts a per-language match arm inside three rules and ends the pack
-abstraction.
+(`docbloat`, `density`), and its own visibility. Whether a name is a private declaration in this
+file is a question about the file rather than the subject, which is why `implInInterface` reads
+concern 11 and not this. Handing a rule a raw node puts a per-language match arm inside three rules
+and ends the pack abstraction.
 
 **Machine directive.** A comment some other tool reads — `//go:build`, `# type:`, `@ts-expect-error`,
 `// CHECKSTYLE:OFF`. Pack-declared, and removed before any rule sees the block. A linter that fires on
@@ -137,8 +157,10 @@ Three things about it are the caller's contract and are fixed here:
   suppressed rather than discarded. This is what lets `deadIgnore` know whether the named rule would
   have fired, without a second evaluation pass.
 - **`fix` removes an ignore directive together with the block it protects.** A directive left behind
-  after its block is deleted would become a `deadIgnore` finding manufactured by `fix` itself, and
-  would break the idempotence AC6 requires.
+  after its block is deleted protects nothing, so the next run reports a `deadIgnore` finding that
+  `fix` itself manufactured. Idempotence is not what this protects — `deadIgnore` carries no Delete
+  fix, so a second run over the same file changes nothing either way. What it protects is the
+  guarantee that running `fix` never increases the finding count.
 
 **Excluded region.** File-level or span-level, and applied before rules: license and copyright headers
 at top of file, generated-file markers, and any path under `testdata/`, `fixtures/`, `vendor/`, or
@@ -169,8 +191,8 @@ is no separate severity: tier decides exit status, and the reporter emits tier d
 Enabling, disabling, re-tiering and configuring a rule all act on this entry, so `ignoreReason` and
 `deadIgnore` are ordinary entries rather than engine behaviour with no configuration surface.
 
-**Packs.** All per-language knowledge, and the interface is exactly these ten concerns. Four are
-declarations — lists a pack states. Six are strategies — predicates a pack answers, because no list
+**Packs.** All per-language knowledge, and the interface is exactly these eleven concerns. Four are
+declarations — lists a pack states. Seven are strategies — predicates a pack answers, because no list
 can express them.
 
 | # | Concern | Shape | Who needs it |
@@ -182,23 +204,35 @@ can express them.
 | 5 | Comment kind — Line, Block or Doc | strategy | every rule, via its per-kind disposition |
 | 6 | The doc comment and the subject it documents | strategy | `docbloat`, `implInInterface` (C8) |
 | 7 | Comment body, with markers stripped | strategy | `banner` and every deny-list rule, which match content and must not see `//`, `#`, `/**` or `*` continuation leaders |
-| 8 | A subject's visibility and exposed symbols | strategy | `implInInterface`. Not a boolean — `pub(crate)`, a TypeScript class member, and a package-level Go identifier are different questions |
+| 8 | A subject's visibility | strategy | `implInInterface`, which fires only on a public subject and so asks this before asking concern 11. Not a boolean — `pub(crate)`, a TypeScript class member, and a package-level Go identifier are different questions |
 | 9 | A subject's statement count | strategy | `density`'s ratio |
 | 10 | Blank-line policy around a removed block | strategy | `fix` |
+| 11 | The file's declared symbols, with each one's visibility | strategy | `implInInterface`, which asks whether a name in a doc comment is a private declaration in this file. Concern 8 describes one subject and cannot answer that |
 
 **What protects charter constraint 4 is this enumeration plus the open trait — not a claim that the
-strategies collapse.** An earlier draft argued that three doc strategies and four visibility
+strategies collapse.** The rejected argument was that three doc strategies and four visibility
 strategies cover all five languages, therefore a pack is mostly a table, therefore constraint 4 is
-safe. That argument was computed over two of these ten concerns and does not survive the other eight.
-The weaker claim is the true one: the interface is knowable and finite, a new language fills ten
+safe. It was computed over two of these eleven concerns and does not survive the other nine — and the
+probe has since refuted its doc-strategy half outright, since Rust's mechanism is a grammar field
+that was not among the three.
+
+The weaker claim is the true one: the interface is knowable and finite, a new language fills its
 slots, and a language whose strategy fits nothing already there implements the trait directly rather
 than forcing a new variant into the engine. Constraint 4 holds because the engine has no per-language
 branch to add to, not because every language turns out to be similar.
 
-*Bounded claim:* which mechanism each language uses for concerns 5 through 10 is design intent, not
-checked parses. Each is confirmed against a real parse tree in the first implementation subtask,
-against the pinned grammar version C10 requires. A mismatch changes a pack's table row; it does not
-change this interface, which is the property that makes the deferral safe.
+Concerns 2, 5, 6, 8, 9 and 11 are confirmed against real parse trees at the pinned grammar versions,
+by the probe suite in `laconic-grammars`; the confirmed table is on `laconic#bb44`. Concerns 7 and 10
+are not grammar facts — marker stripping is lexical and blank-line policy is a language convention —
+so both are pack decisions with nothing for a parser to confirm. The probe is also the pin check C10
+requires: when a grammar version moves, what fails is the mapping a pack was written against.
+
+Concern 11 carries decision 23's reversal condition — the narrow `implInInterface` is abandoned if
+two or more packs cannot answer it without a heuristic — and the probe evaluates it rather than
+assuming it. Rust answers with `visibility_modifier` and TypeScript with an `export_statement`
+parent, both language facts. Python has no visibility construct at all, so it answers with the
+leading-underscore convention. One pack, not two: the condition is not met and the narrow ruling
+stands.
 
 **Fix.** Turns *Delete* findings from autofix-enabled rules into byte-range edits and applies them
 back-to-front so earlier offsets stay valid. Resolving what whitespace survives a removal is the part
@@ -245,7 +279,7 @@ does not list.
 | Rule | Kinds | Fires on |
 |---|---|---|
 | `narration` | Line, Block — plus Doc at warn tier with a Rewrite fix | change-log and process language: *changed to*, *updated to*, *previously*, *as requested*, *now we*, *note that we*, *moved to*, *refactored to*, *this now*, *per your* |
-| `banner` | Line, Block — plus Doc at warn tier with a Rewrite fix | a stripped body that is only repeated punctuation, a `Step N:` sequence, or a standalone all-caps section label. Matching is over the body from pack concern 7, never the raw line — a raw-line test both misses `// =====` and fires on a Markdown rule |
+| `banner` | Line, Block — plus Doc at warn tier with a Rewrite fix | a stripped body that is only repeated punctuation, a `Step N:` sequence, or a standalone all-caps section label. Matching is over the body from pack concern 7, never the raw line: a raw-line test misses `// =====`, because the raw line begins with the comment marker. What matching the body costs is that a Markdown horizontal rule inside a doc comment is a hit — warn tier, and AC7 measures it |
 
 **Gate tier, Delete fix, autofix off by default.** Exit non-zero; `laconic fix` leaves them for a
 human until the corpus run (section 8) justifies flipping the default.
@@ -257,10 +291,12 @@ human until the corpus run (section 8) justifies flipping the default.
 | `attribution` | Line, Block | *written by*, *authored by*, *adapted from*, *courtesy of*, *based on code from* | *adapted from* can be a required licence notice. The header carve-out catches the top-of-file case; a mid-file notice is indistinguishable from vanity by any deterministic test, and deleting the wrong one is a licensing problem |
 | `detached` | Line, Block | `attachment == Detached` | *Detached* includes "nothing follows", so `// intentionally empty`, `// no-op` and `// unreachable — checked by the caller` at the end of a block are structurally identical to an orphan. It is the only rule here with no text test at all, which makes it the most destructive one to run unattended |
 
-These four gate without a mechanical remedy, which is a workflow consequence rather than an
-oversight: in a pre-commit hook the only way past one is to fix it by hand or to write a reasoned
-ignore directive — which `ignoreReason` then polices and `deadIgnore` later flags when it goes stale.
-That friction is the point, and it is the price of not deleting good comments unattended.
+All four carry a Delete fix that `fix` knows how to apply; what they ship with is autofix off, which
+is a default rather than a missing capability. Out of the box that makes the ways past one in a
+pre-commit hook a hand fix or a reasoned ignore directive — which `ignoreReason` then polices and
+`deadIgnore` later flags when it goes stale. A caller who accepts the risk switches autofix on per
+rule in config. That friction is the default because it is the price of not deleting good comments
+unattended.
 
 **Gate tier, no fix.** Exit non-zero; a human decides.
 
@@ -275,7 +311,7 @@ That friction is the point, and it is the price of not deleting good comments un
 |---|---|---|
 | `density` | Line, Block | per subject: more than 8 comment lines **and** comment-to-statement ratio above 0.5 |
 | `docbloat` | Doc | over 15 lines, or over 3× the subject's body |
-| `implInInterface` | Doc | a public doc comment naming symbols its subject does not expose |
+| `implInInterface` | Doc | a public subject's doc comment naming an identifier that is declared in this file and is not exported. A reference to another exported symbol is an ordinary cross-reference and is not a finding (decision 23 on `laconic#bb44`) |
 | `hedging` | all | *should work*, *for now*, *in most cases*, *if needed*, *probably*, *might need* |
 | `vague` | all | *handles the logic*, *does the necessary*, *various things*, *as appropriate*, *etc.* as a sentence ender |
 | `task` | all | TODO/FIXME/XXX/HACK with no issue reference. `TODO(KAT-123)` and `TODO(#456)` pass |
@@ -304,13 +340,13 @@ anything under `testdata/`, `fixtures/`, `vendor/`, `node_modules/`.
 resolve attachment, kind, subject → drop excluded regions → strip machine directives → lift out
 ignore directives → dispatch → reconcile → report`.
 
-Two stages carry more than their name. **Dispatch** is per block for fourteen rules and per subject
-for `density`, over the blocks attached to that subject. **Reconcile** is the stage an earlier draft
-lacked: findings covered by an ignore directive are marked suppressed rather than discarded, and only
-then can `deadIgnore` ask whether a named rule ran and did not fire, and `ignoreReason` report a
-directive carrying no reason. Both rules read ignore directives that survived dispatch, which is why
-those are lifted out rather than stripped — a stripped directive is invisible to the two rules that
-take it as input.
+Two stages carry more than their name. **Dispatch** is per block for twelve rules and per subject
+for `density`. The remaining two never reach dispatch: `ignoreReason` and `deadIgnore` are evaluated
+at **reconcile**, where findings covered by an ignore directive are marked suppressed rather than
+discarded. Only there can `deadIgnore` ask whether a named rule ran and did not fire, and
+`ignoreReason` report a directive carrying no reason. Both rules read ignore directives that survived
+dispatch, which is why those are lifted out rather than stripped — a stripped directive is invisible
+to the two rules that take it as input.
 
 In fix mode, findings whose rule has autofix enabled and a Delete fix shape become byte-range edits,
 applied back-to-front within a file, each carrying its protecting ignore directive with it.
@@ -333,7 +369,15 @@ neither of which depends on the surrounding tree: `narration`, `banner`, `attrib
 
 *Suppressed within any subtree containing an ERROR node*, because their correctness depends on
 subject resolution and attachment, both unreliable there: `restate`, `detached`, `docbloat`,
-`implInInterface`, `density`.
+`density`.
+
+*Suppressed for the whole file when it contains any ERROR node anywhere*: `implInInterface` alone.
+Its input is file-scoped — concern 11 enumerates every declaration in the file — so a clean subtree
+says nothing about whether that enumeration is complete. Under subtree suppression the rule would run
+against a partial declaration set, fail to resolve the name it was meant to catch, and report
+nothing, with no withheld-rules note to distinguish that from a clean file. This is the only rule in
+the set whose suppression scope is the file rather than the subtree, and it is a consequence of
+decision 23 narrowing it.
 
 *Conditional*: `deadIgnore` fires only when its named rule **ran and did not fire**, never when the
 rule was suppressed. Suppressed is not the same as did-not-fire, and conflating them reports a live
