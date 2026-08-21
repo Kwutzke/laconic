@@ -370,8 +370,8 @@ mod tests {
         assert!(!looks_like_source_path("config.json", &["go"]));
     }
 
-    /// Every case below was found by `cargo mutants`: the line ran under the existing tests, but
-    /// no test would have noticed the behaviour changing. Coverage called all of it green.
+    // Every case below was found by `cargo mutants`: the line ran under the existing tests, but
+    // no test would have noticed the behaviour changing. Coverage called all of it green.
 
     /// The trim is what lets a decorated task marker reach `task` instead of `banner`. Without it
     /// `-- TODO --` is a section label, and two rules report the same comment with two different
