@@ -149,7 +149,7 @@ pub fn analyse(
         let run_end_row = all[last_in_run].1.end_row;
         let mut nodes: Vec<Node> = Vec::new();
         let mut comments: Vec<Comment> = Vec::new();
-        for i in run {
+        for &i in &run {
             let (node, comment) = &all[i];
             if is_machine_directive(pack, &comment.body) {
                 continue;
@@ -166,9 +166,24 @@ pub fn analyse(
             continue;
         }
 
+        // **Over the whole run, for the same reason attachment is.** A pack identifies a doc
+        // comment by looking at the declaration's neighbour, and a machine directive is the same
+        // node kind as prose in Go, Java and TypeScript — so for
+        //
+        //     // Schema is the embedded DDL.
+        //     //go:embed schema.sql
+        //     var Schema string
+        //
+        // the pack reports the directive as the doc node. Searched over the survivors, that node
+        // is gone, the block falls to Line kind, and `narration` and `banner` carry Delete at gate
+        // tier with autofix on. Go *forces* this shape: `//go:embed` must sit on the line directly
+        // above its declaration.
+        //
+        // `no_delete_fix_applies_to_doc_kind` cannot catch it — that asserts the registry table,
+        // not the resolution that decides which row of the table a block is read from.
         let doc = docs
             .iter()
-            .find(|d| nodes.iter().any(|n| n.id() == d.node.id()));
+            .find(|d| run.iter().any(|&i| all[i].0.id() == d.node.id()));
         let kind = match doc {
             Some(_) => CommentKind::Doc,
             None => pack.comment_kind(nodes[0], src),

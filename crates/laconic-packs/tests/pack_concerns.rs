@@ -72,6 +72,21 @@ fn a_python_docstring_documents_its_enclosing_scope() {
 
 /// And the docstring is discounted from the statement count, so the same shape counts the same in
 /// Python as anywhere else.
+/// Java and TS/JS make a machine directive the same node kind as prose, so the pack's own
+/// doc-comment lookup must walk over one rather than answering with it. Answered with it, the
+/// marker test fails, the declaration reads as undocumented, and its javadoc or JSDoc drops to a
+/// kind carrying a Delete fix at gate tier with autofix on.
+#[test]
+fn a_directive_does_not_hide_the_doc_comment_above_it() {
+    let java = "public class F {\n    /** Reads the row. */\n    // CHECKSTYLE:OFF\n    public int read() { return 0; }\n}\n";
+    let a = analyse_str("F.java", java);
+    assert_eq!(block_with(&a, "Reads the row").kind, CommentKind::Doc);
+
+    let ts = "/** Looks up the key. */\n// eslint-disable-next-line no-explicit-any\nexport function lookup(k: string) { return k; }\n";
+    let b = analyse_str("x.ts", ts);
+    assert_eq!(block_with(&b, "Looks up the key").kind, CommentKind::Doc);
+}
+
 /// A Rust statement-level attribute is a named child of `block`, so counting it inflates
 /// `density`'s denominator by one per attribute. The probe pins this as a grammar fact; nothing
 /// pinned the pack's own exclusion.

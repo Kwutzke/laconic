@@ -80,7 +80,7 @@ impl Pack for JavaPack {
         descendants_of_kind(root, DECLARATIONS)
             .into_iter()
             .filter_map(|decl| {
-                let comment = preceding_comment(decl, src, COMMENT_KINDS)?;
+                let comment = preceding_comment(decl, src, COMMENT_KINDS, MACHINE_DIRECTIVES)?;
                 (comment.kind() == "block_comment" && is_marker_doc(&src[comment.byte_range()]))
                     .then_some(DocComment {
                         node: comment,

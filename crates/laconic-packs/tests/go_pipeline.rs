@@ -27,6 +27,28 @@ fn block_starting(a: &FileAnalysis, prefix: &str) -> usize {
         .unwrap_or_else(|| panic!("no block starting {prefix:?}; got {:?}", bodies(a)))
 }
 
+/// A machine directive between prose and its declaration must not cost the block its Doc kind.
+///
+/// Go forces this shape — `//go:embed` must sit on the line directly above the declaration. As
+/// Line kind the block carries a Delete fix at gate tier with autofix on, so `laconic fix` deletes
+/// the godoc of an exported var. `no_delete_fix_applies_to_doc_kind` cannot catch it: that asserts
+/// the registry table, not which row of the table a block is read from.
+#[test]
+fn a_directive_between_prose_and_its_declaration_keeps_doc_kind() {
+    let src =
+        "package x\n\n// Schema is the embedded DDL.\n//go:embed schema.sql\nvar Schema string\n";
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let block = a
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("embedded DDL"))
+        .expect("the prose comment is extracted");
+    assert_eq!(block.kind, CommentKind::Doc);
+}
+
 /// An interface method is a `method_elem`, not a `field_declaration`. Missing from the documentable
 /// set, the comment above an exported interface method is Line kind — a Delete fix at gate tier
 /// with autofix **on**, so `laconic fix` deletes the godoc of a published API.

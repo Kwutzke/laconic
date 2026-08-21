@@ -110,7 +110,7 @@ impl Pack for TypeScriptPack {
                 } else {
                     decl
                 };
-                let comment = preceding_comment(anchor, src, COMMENT_KINDS)?;
+                let comment = preceding_comment(anchor, src, COMMENT_KINDS, MACHINE_DIRECTIVES)?;
                 is_marker_doc(&src[comment.byte_range()]).then_some(DocComment {
                     node: comment,
                     subject: decl,

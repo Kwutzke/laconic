@@ -77,15 +77,37 @@ pub fn descendants_of_kind<'t>(root: Node<'t>, kinds: &[&str]) -> Vec<Node<'t>> 
 }
 
 /// The comment directly above `subject`, when one is there and is alone on its line.
+///
+/// **Machine directives are walked over rather than returned.** In Java and TS/JS a directive is
+/// the same node kind as prose, so `// CHECKSTYLE:OFF` or `// eslint-disable-next-line` between a
+/// doc comment and its declaration otherwise becomes the answer — and it fails the caller's marker
+/// test, so the declaration reads as undocumented and its doc comment drops to a kind that carries
+/// a Delete fix at gate tier.
+///
+/// Stripping is `strip_c_markers`, which both callers use; a pack whose comments are not C-shaped
+/// needs its own walk.
 pub fn preceding_comment<'t>(
     subject: Node<'t>,
     src: &str,
     comment_kinds: &[&str],
+    directive_prefixes: &[&str],
 ) -> Option<Node<'t>> {
-    let prev = subject.prev_sibling()?;
-    let adjacent = prev.end_position().row + 1 == subject.start_position().row;
-    (comment_kinds.contains(&prev.kind()) && adjacent && alone_on_its_line(prev, src))
-        .then_some(prev)
+    let mut below_row = subject.start_position().row;
+    let mut candidate = subject.prev_sibling();
+    while let Some(prev) = candidate {
+        let adjacent = prev.end_position().row + 1 == below_row;
+        if !comment_kinds.contains(&prev.kind()) || !adjacent || !alone_on_its_line(prev, src) {
+            return None;
+        }
+        let body = strip_c_markers(&src[prev.byte_range()]);
+        let trimmed = body.trim_start();
+        if !directive_prefixes.iter().any(|p| trimmed.starts_with(p)) {
+            return Some(prev);
+        }
+        below_row = prev.start_position().row;
+        candidate = prev.prev_sibling();
+    }
+    None
 }
 
 /// Statements in a body node, excluding comments and any node kind that is not a statement.
