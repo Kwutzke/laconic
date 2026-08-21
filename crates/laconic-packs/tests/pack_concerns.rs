@@ -121,9 +121,12 @@ fn a_directive_does_not_hide_the_doc_comment_above_it() {
 /// A Rust statement-level attribute is a named child of `block`, so counting it inflates
 /// `density`'s denominator by one per attribute. The probe pins this as a grammar fact; nothing
 /// pinned the pack's own exclusion.
+///
+/// **Both forms**, because the exclusion is a two-element list and an outer attribute alone leaves
+/// `inner_attribute_item` free to be deleted with the suite green.
 #[test]
 fn a_rust_attribute_is_not_a_statement() {
-    let with_attr = "fn f() {\n    #[allow(unused)]\n    let x = 1;\n    let _ = x;\n}\n";
+    let with_attr = "fn f() {\n    #![allow(dead_code)]\n    #[allow(unused)]\n    let x = 1;\n    let _ = x;\n}\n";
     let without = "fn f() {\n    let x = 1;\n    let _ = x;\n}\n";
     let count = |src: &str| {
         analyse_str("x.rs", src)

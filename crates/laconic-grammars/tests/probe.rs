@@ -670,8 +670,9 @@ fn statement_case(g: Grammar) -> Option<(&'static str, &'static str, &'static st
 /// child of `block`, so counting it inflates `density`'s denominator by one per attribute and makes
 /// the rule systematically harder to trip in attribute-heavy code.
 ///
-/// The Rust fixture carries one attribute inside `exported` for this reason: without it the filter
-/// removed nothing from any fixture and the claim was prose the pin could not break.
+/// The Rust fixture carries **both** forms inside `exported` for this reason. With an outer
+/// attribute alone, `inner_attribute_item` appeared in no fixture, so deleting it from either list
+/// left the whole suite green while `#![…]` inflated the denominator.
 fn non_statement_kinds(g: Grammar) -> &'static [&'static str] {
     match g {
         Grammar::Rust => &["attribute_item", "inner_attribute_item"],
