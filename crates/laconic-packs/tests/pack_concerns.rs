@@ -88,8 +88,6 @@ fn a_python_docstring_documents_its_enclosing_scope() {
     assert!(subject.span.start <= doc.span.start && doc.span.end <= subject.span.end);
 }
 
-/// And the docstring is discounted from the statement count, so the same shape counts the same in
-/// Python as anywhere else.
 /// A tuple variant and a newtype both name a `body` field spanning one row, so measuring against
 /// it put `docbloat`'s relative threshold at three lines — shorter than an ordinary doc comment.
 /// This is the half of the bodyless-declaration class that survived the first repair.
@@ -140,6 +138,8 @@ fn a_rust_attribute_is_not_a_statement() {
     assert_eq!(count(with_attr), count(without));
 }
 
+/// And the docstring is discounted from the statement count, so the same shape counts the same in
+/// Python as anywhere else.
 #[test]
 fn a_python_docstring_is_not_a_statement() {
     let with_doc = "def f():\n    \"\"\"Doc.\"\"\"\n    x = 1\n    return x\n";
