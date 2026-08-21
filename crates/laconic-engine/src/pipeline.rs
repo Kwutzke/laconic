@@ -31,6 +31,8 @@ pub struct FileAnalysis {
     /// The extensions the resolved pack claims — concern 1, which `fileref` needs to tell a source
     /// path from an ordinary dotted word.
     pub source_extensions: Vec<&'static str>,
+    /// The grammar this file was parsed with, for `commentedOutCode`.
+    pub grammar: Grammar,
 }
 
 /// Why a file produced no analysis. None of these is an error: laconic runs over whole
@@ -159,13 +161,14 @@ pub fn analyse(
         };
 
         let span = comments[0].span.start..comments.last().unwrap().span.end;
+        let in_error_subtree = in_error_subtree(root, &span, following);
         blocks.push(CommentBlock {
             kind,
             attachment,
             span,
             subject,
             ignore: None,
-            in_error_subtree: following.is_some_and(|n| n.has_error()),
+            in_error_subtree,
             attached_identifiers,
             comments,
         });
@@ -189,6 +192,7 @@ pub fn analyse(
         declared: pack.declared_symbols(root, src),
         has_error_nodes: has_error_nodes(root),
         source_extensions: pack.extensions().iter().map(|(e, _)| *e).collect(),
+        grammar,
     })
 }
 
@@ -324,4 +328,27 @@ fn build_subject(pack: &dyn Pack, node: Node, src: &str) -> Subject {
 
 fn has_error_nodes(root: Node) -> bool {
     root.has_error()
+}
+
+/// Whether a block sits in a subtree that does not parse — §7's suppression scope.
+///
+/// The subtree is the **top-level declaration** containing the block, not the root: the root of any
+/// file with a single syntax error reports `has_error`, so testing the root would make subtree scope
+/// mean file scope and collapse two of §7's four cases into one.
+///
+/// The second test covers a doc comment above a broken declaration. It sits outside that
+/// declaration's span, so containment alone would call it clean while its subject is exactly the
+/// node that failed to parse.
+fn in_error_subtree(
+    root: Node<'_>,
+    span: &std::ops::Range<usize>,
+    following: Option<Node>,
+) -> bool {
+    if following.is_some_and(|n| n.has_error()) {
+        return true;
+    }
+    let mut cursor = root.walk();
+    root.named_children(&mut cursor).any(|decl| {
+        decl.start_byte() <= span.start && decl.end_byte() >= span.end && decl.has_error()
+    })
 }

@@ -63,6 +63,7 @@ pub fn dispatch(
                 subject,
                 declared: &analysis.declared,
                 source_extensions: &analysis.source_extensions,
+                grammar: analysis.grammar,
                 src,
             };
             if let Some(hit) = rule.check(&ctx) {

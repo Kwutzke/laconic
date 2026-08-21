@@ -9,7 +9,9 @@
 //! diff nobody reads, and the green-seeking agent this whole design is written against finds that
 //! affordance immediately. On a mismatch the runner prints the actual lines for a human to paste.
 
-use laconic_engine::{Config, Registry, Report, Rules, analyse, dispatch, resolve, text_rules};
+use laconic_engine::{
+    Config, Registry, Report, Rules, all_block_rules, all_subject_rules, analyse, dispatch, resolve,
+};
 use laconic_packs::all;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -29,8 +31,8 @@ fn actual(path: &Path) -> Vec<String> {
     let analysis = analyse(pack, grammar, path, &src, &Config::unrestricted())
         .expect("a fixture is never skipped");
     let rules = Rules {
-        block: text_rules(),
-        subject: Vec::new(),
+        block: all_block_rules(),
+        subject: all_subject_rules(),
     };
     let (findings, note) = dispatch(path, &src, &analysis, &Registry::default(), &rules);
     let mut report = Report {
@@ -51,8 +53,8 @@ fn instructions(path: &Path) -> Vec<String> {
     let (pack, grammar) = resolve(&packs, path).expect("a pack claims this fixture");
     let analysis = analyse(pack, grammar, path, &src, &Config::unrestricted()).expect("analysable");
     let rules = Rules {
-        block: text_rules(),
-        subject: Vec::new(),
+        block: all_block_rules(),
+        subject: all_subject_rules(),
     };
     let (findings, _) = dispatch(path, &src, &analysis, &Registry::default(), &rules);
     findings.into_iter().map(|f| f.instruction).collect()
@@ -67,25 +69,6 @@ fn expected(path: &Path) -> Vec<String> {
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(str::to_string)
         .collect()
-}
-
-fn check(path: &Path) {
-    let got = actual(path);
-    let want = expected(path);
-    assert_eq!(
-        got,
-        want,
-        "\n{} reported:\n{}\n",
-        path.display(),
-        if got.is_empty() {
-            "  (nothing)".to_string()
-        } else {
-            got.iter()
-                .map(|l| format!("  {l}"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        }
-    );
 }
 
 fn fixtures_for(rule: &str) -> Vec<PathBuf> {
@@ -104,8 +87,8 @@ fn fixtures_for(rule: &str) -> Vec<PathBuf> {
 /// nobody checked for false positives, which is the failure mode this whole design is defensive
 /// about.
 #[test]
-fn every_text_rule_has_a_positive_and_a_negative_fixture() {
-    for rule in TEXT_RULES {
+fn every_rule_has_a_positive_and_a_negative_fixture() {
+    for rule in RULES {
         let names: Vec<String> = fixtures_for(rule)
             .iter()
             .map(|p| p.file_stem().unwrap().to_string_lossy().to_string())
@@ -121,7 +104,9 @@ fn every_text_rule_has_a_positive_and_a_negative_fixture() {
     }
 }
 
-const TEXT_RULES: &[&str] = &[
+/// Every rule with a fixture directory. `ignoreReason` and `deadIgnore` are here too: they are
+/// ordinary entries in the registry, not engine behaviour with no configuration surface.
+const RULES: &[&str] = &[
     "narration",
     "banner",
     "attribution",
@@ -129,15 +114,40 @@ const TEXT_RULES: &[&str] = &[
     "vague",
     "task",
     "fileref",
+    "restate",
+    "detached",
+    "commentedOutCode",
+    "docbloat",
+    "implInInterface",
+    "density",
+    "ignoreReason",
+    "deadIgnore",
 ];
 
+/// Every mismatch is reported, not just the first. A runner that stops at the first difference
+/// makes a change touching several rules take one round trip per rule to understand.
 #[test]
 fn every_fixture_matches_its_expectations() {
-    for rule in TEXT_RULES {
+    let mut failures = Vec::new();
+    for rule in RULES {
         for path in fixtures_for(rule) {
-            check(&path);
+            let (got, want) = (actual(&path), expected(&path));
+            if got != want {
+                failures.push(format!(
+                    "{}\n  expected: {:?}\n  actual:   {:?}",
+                    path.strip_prefix(testdata()).unwrap_or(&path).display(),
+                    want,
+                    got
+                ));
+            }
         }
     }
+    assert!(
+        failures.is_empty(),
+        "{} fixture(s) disagree with their expectations:\n\n{}\n",
+        failures.len(),
+        failures.join("\n\n")
+    );
 }
 
 /// AC8: every diagnostic states the change to make. A message that names a defect without naming
@@ -145,9 +155,22 @@ fn every_fixture_matches_its_expectations() {
 /// acting on one diagnostic, and it will act on whatever the sentence tells it to do.
 #[test]
 fn every_instruction_opens_with_the_change_to_make() {
-    const IMPERATIVES: &[&str] = &["remove", "rewrite", "add", "reference", "replace", "delete"];
+    // Every verb any rule opens with. The criterion is that the sentence names a change; the list
+    // grows when a rule needs a verb it does not have, and never to accommodate a message that
+    // names a defect instead.
+    const IMPERATIVES: &[&str] = &[
+        "remove",
+        "rewrite",
+        "add",
+        "reference",
+        "replace",
+        "delete",
+        "move",
+        "shorten",
+        "reduce",
+    ];
     let mut seen = 0;
-    for rule in TEXT_RULES {
+    for rule in RULES {
         let path = testdata().join("go").join(rule).join("positive.go");
         for instruction in instructions(&path) {
             let first = instruction
@@ -162,17 +185,14 @@ fn every_instruction_opens_with_the_change_to_make() {
             seen += 1;
         }
     }
-    assert!(
-        seen >= TEXT_RULES.len(),
-        "every rule contributed an instruction"
-    );
+    assert!(seen >= RULES.len(), "every rule contributed an instruction");
 }
 
 /// A negative fixture reports nothing at all. Stated separately from the sidecar comparison so the
 /// suite fails loudly if a negative fixture ever gains an expectation by accident.
 #[test]
 fn negative_fixtures_report_nothing() {
-    for rule in TEXT_RULES {
+    for rule in RULES {
         let path = testdata().join("go").join(rule).join("negative.go");
         assert!(
             expected(&path).is_empty(),

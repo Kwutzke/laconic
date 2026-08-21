@@ -27,4 +27,7 @@ pub use report::{
     EXIT_CLEAN, EXIT_GATE, EXIT_USAGE, Finding, Report, UnreadableFile, WithheldNote,
 };
 pub use rule::{BlockContext, BlockRule, RuleHit, SubjectContext, SubjectRule};
-pub use rules::text_rules;
+pub use rules::{
+    all_block_rules, all_subject_rules, structural_block_rules, structural_subject_rules,
+    text_rules,
+};
