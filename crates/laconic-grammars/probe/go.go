@@ -12,6 +12,8 @@ const MaxDepth = 3
 
 var defaultName = "probe"
 
+var Width, height = 2, 3
+
 // Config is an exported type.
 type Config struct{}
 

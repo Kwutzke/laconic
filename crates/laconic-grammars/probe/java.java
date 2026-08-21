@@ -16,6 +16,7 @@ public class Probe {
         return x;
     }
 
+    @SuppressWarnings("public-api")
     private void hidden() {}
 
     private static class Helper {}

@@ -5,7 +5,10 @@ use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Path fragments whose files are skipped.
+    /// Path **components** whose files are skipped — whole segments, compared for equality.
+    ///
+    /// `vendor` excludes `a/vendor/b.go`; `src/generated` and `gen*` match no component and
+    /// exclude nothing.
     ///
     /// **Replaceable, not just extendable**, and that is a requirement rather than a convenience:
     /// AC2 puts every fixture under `testdata/<lang>/<rule>/`, so the fixture suite runs with this
@@ -42,12 +45,25 @@ impl Config {
 
     /// A licence or copyright notice, which is carved out when it sits at the top of a file.
     ///
+    /// The marker must **open a line**. Matching anywhere in the body deletes any first block that
+    /// merely mentions a licence — and the commonest first block in a Go file is the package doc
+    /// comment, so `// Package x implements the MIT-licensed parser.` would vanish whole, taking a
+    /// pkg.go.dev surface with it.
+    ///
     /// The position test is the caller's: `attribution` must still fire on a mid-file notice,
     /// which is the case no deterministic test can separate from vanity.
     pub fn is_licence_header(&self, block: &CommentBlock) -> bool {
-        let body = block.body().to_lowercase();
-        ["copyright", "license", "licence", "spdx-license-identifier"]
-            .iter()
-            .any(|m| body.contains(m))
+        const MARKERS: &[&str] = &[
+            "copyright",
+            "licensed under",
+            "licence",
+            "license",
+            "spdx-license-identifier",
+            "all rights reserved",
+        ];
+        block.body().lines().any(|line| {
+            let line = line.trim_start().to_lowercase();
+            MARKERS.iter().any(|m| line.starts_with(m))
+        })
     }
 }

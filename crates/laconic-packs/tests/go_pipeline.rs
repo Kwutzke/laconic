@@ -178,9 +178,14 @@ fn a_doc_block_carries_its_subject() {
         "the header binds these; the body's identifiers are not the subject's"
     );
 
+    // Not `Private`: an unexported top-level Go identifier is reachable from every other file in
+    // the same package, which is exactly what `Restricted` describes and `Private` denies.
     let unexported = &a.blocks[block_starting(&a, " unexported does nothing")];
     let subject = &a.subjects[unexported.subject.unwrap()];
-    assert_eq!(subject.visibility, Visibility::Private);
+    assert_eq!(
+        subject.visibility,
+        Visibility::Restricted("package".to_string())
+    );
 }
 
 /// A detached block is attached to nothing, so it has no subject — which is what makes `detached`
@@ -272,4 +277,140 @@ fn a_file_with_error_nodes_is_processed_and_flagged() {
         !a.blocks.is_empty(),
         "comment extraction survives an ERROR node"
     );
+}
+
+/// A machine directive sitting **inside** a comment run must not split the run.
+///
+/// Removing directives before grouping breaks row adjacency, so the comments above and below one
+/// stop being a single block — and a narration block split by a `//nolint:` line becomes two
+/// gate-tier findings where the source has one comment.
+#[test]
+fn a_machine_directive_inside_a_run_does_not_split_the_block() {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).unwrap();
+    let src = "package x\n\nfunc f() {\n\t// first line\n\t//nolint:gosec\n\t// second line\n\tq := 1\n\t_ = q\n}\n";
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).unwrap();
+    let blocks: Vec<&laconic_engine::CommentBlock> = a
+        .blocks
+        .iter()
+        .filter(|b| b.body().contains("line"))
+        .collect();
+    assert_eq!(blocks.len(), 1, "one block, not two: {:?}", bodies(&a));
+    assert_eq!(blocks[0].comments.len(), 2, "the directive is gone from it");
+    assert!(!blocks[0].body().contains("nolint"));
+}
+
+/// A multi-byte character straddling the generated-marker cut must not panic. laconic runs as a
+/// pre-commit hook and in CI, where a panic is the only output anyone sees.
+#[test]
+fn a_multibyte_character_near_the_marker_cut_does_not_panic() {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).unwrap();
+    let mut src = String::from("package x\n\nvar s = \"");
+    while src.len() < 2040 {
+        src.push('a');
+    }
+    // Pushed so that the character spans the 2048-byte cut.
+    src.push_str("日本語日本語");
+    src.push_str("\"\n");
+    let a = analyse(pack, grammar, path, &src, &Config::unrestricted());
+    assert!(a.is_ok());
+}
+
+/// The package comment is a doc comment. As Line kind it would carry a Delete fix at gate tier with
+/// autofix on, so `laconic fix` would delete the surface pkg.go.dev renders.
+#[test]
+fn the_package_comment_is_doc_kind() {
+    let a = run();
+    let pkg = &a.blocks[block_starting(&a, " Package pipeline")];
+    assert_eq!(pkg.kind, CommentKind::Doc);
+}
+
+/// A trailing comment documents nothing. Without the alone-on-its-line test it becomes the doc
+/// comment of whatever declaration follows it.
+#[test]
+fn a_trailing_comment_is_never_a_doc_comment() {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).unwrap();
+    let src = "package x\n\nvar a = 1 // trailing\nfunc F() {}\n";
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).unwrap();
+    let trailing = &a.blocks[block_starting(&a, " trailing")];
+    assert_eq!(trailing.kind, CommentKind::Line);
+    assert_eq!(trailing.attachment, Attachment::AttachedTrailing);
+}
+
+/// A spec binds N names and the grouped form nests one level deeper. Reading the first `name` field
+/// of the first spec drops everything else, and `implInInterface` cannot resolve what it dropped.
+#[test]
+fn declared_symbols_cover_grouped_and_multi_name_declarations() {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).unwrap();
+    let src = "package x\n\nvar Foo, bar = 1, 2\n\nconst (\n\tAlpha = 1\n\tbeta  = 2\n)\n";
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).unwrap();
+    let got: Vec<(&str, &str)> = a
+        .declared
+        .iter()
+        .map(|d| (d.form, d.name.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("var", "Foo"),
+            ("var", "bar"),
+            ("const", "Alpha"),
+            ("const", "beta"),
+        ]
+    );
+}
+
+/// A directive that protects nothing still lacks a reason, and is the one a reader most needs told
+/// about. Dropping unbound directives made `ignoreReason` silently incomplete.
+#[test]
+fn a_directive_binding_to_no_block_is_retained() {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).unwrap();
+    let src = "package x\n\nfunc f() {\n\t// laconic:ignore narration\n\n\tq := 1\n\t_ = q\n}\n";
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).unwrap();
+    assert_eq!(a.unbound_directives.len(), 1);
+    assert_eq!(a.unbound_directives[0].rule, "narration");
+    assert_eq!(a.unbound_directives[0].reason, None);
+}
+
+/// The licence carve-out must not swallow a package comment that merely mentions a licence. The
+/// marker has to open a line, and a doc comment is never carved out.
+#[test]
+fn the_licence_carve_out_spares_a_package_comment() {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).unwrap();
+    let src = "// Package x implements the MIT-licensed parser.\npackage x\n";
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).unwrap();
+    assert!(
+        bodies(&a).iter().any(|b| b.contains("Package x")),
+        "the package comment survives: {:?}",
+        bodies(&a)
+    );
+}
+
+/// `line_count` counts rows, not comments. A regression to counting comments halves the number
+/// `density`'s 8-line threshold and `docbloat`'s 15-line threshold are measured against.
+#[test]
+fn line_count_counts_rows_of_a_multi_row_block_comment() {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).unwrap();
+    let src = "package x\n\nfunc f() {\n\t/* one\n\t   two\n\t   three */\n\tq := 1\n\t_ = q\n}\n";
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).unwrap();
+    let block = a
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("one"))
+        .expect("the block comment");
+    assert_eq!(block.comments.len(), 1);
+    assert_eq!(block.line_count(), 3);
 }

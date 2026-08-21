@@ -124,10 +124,15 @@ node follows with no blank line between. *AttachedTrailing*: code precedes the c
 *Detached*: a blank line intervenes, or nothing follows. The `detached` rule is exactly
 `attachment == Detached`.
 
-**Kind.** *Line*, *Block*, or *Doc*. The pack assigns it. Every rule declares a disposition per kind,
-and this is the whole mechanism by which language asymmetries stay out of the rules: the Python pack
-assigns Doc to a first-statement string and Line to a `#` comment, and `narration` declaring its
-dispositions then handles Python correctly without containing any Python.
+**Kind.** *Line*, *Block*, or *Doc*. Every rule declares a disposition per kind, and this is the
+whole mechanism by which language asymmetries stay out of the rules.
+
+The pack supplies it in two halves, because one predicate cannot answer both. Line versus Block is
+concern 5, over a comment node. **Doc is concern 6's**, which returns the doc comment together with
+the subject it documents — and a Python docstring is a `string` node that never reaches concern 5 at
+all, so a pack asked to return Doc from a comment node could not report one. The engine promotes a
+block to Doc when concern 6 named any comment in it. `narration` declaring its dispositions then
+handles Python correctly without containing any Python.
 
 **Subject.** What a block is attached to, described by the pack rather than handed over as a raw
 syntax node. A subject reports the identifiers it binds (`restate`), the length of its body
@@ -201,8 +206,8 @@ can express them.
 | 2 | Which grammar node types carry comments | declaration | extraction. There is no node type common to all grammars, so this cannot be an engine constant |
 | 3 | Machine-directive prefixes | declaration | stripping, before any rule runs |
 | 4 | Generated-file markers | declaration | file-level exclusion |
-| 5 | Comment kind — Line or Block | strategy | every rule, via its per-kind disposition. Doc is concern 6's, not this one's: in three of the five languages Doc is positional or structural and cannot be decided from a comment node alone, so splitting it here would make concern 5 unanswerable for them |
-| 6 | The doc comment and the subject it documents | strategy | `docbloat`, `implInInterface` (C8) |
+| 5 | Comment kind — Line or Block | strategy | every rule, via its per-kind disposition. Doc is concern 6's: in Go and Python it is positional and cannot be decided from a comment node at all — a Python docstring is not even a comment node — so answering it here would leave concern 5 unanswerable for them |
+| 6 | The doc comment and the subject it documents | strategy | **every rule**, because this is what makes a block Doc kind and the deletion invariant turns on that. `docbloat` and `implInInterface` additionally need the subject (C8). Rust could decide Doc from its comment node alone, and still routes through here because the subject has to travel with it |
 | 7 | Comment body, with markers stripped | strategy | `banner` and every deny-list rule, which match content and must not see `//`, `#`, `/**` or `*` continuation leaders |
 | 8 | A subject's visibility | strategy | `implInInterface`, which fires only on a public subject and so asks this before asking concern 11. Not a boolean — `pub(crate)`, a TypeScript class member, and a package-level Go identifier are different questions |
 | 9 | A subject's statement count | strategy | `density`'s ratio |

@@ -93,7 +93,7 @@ fn statement_count(g: Grammar, kind: &str, name: &str, container_kind: &str) -> 
     let mut cursor = container.walk();
     container
         .named_children(&mut cursor)
-        .filter(|n| !n.is_extra())
+        .filter(|n| !n.is_extra() && !non_statement_kinds(g).contains(&n.kind()))
         .count()
 }
 
@@ -145,7 +145,7 @@ fn comment_node_kinds_are_grammar_truth() {
 /// JavaScript and TSX rows.
 #[test]
 fn every_declared_comment_kind_appears_in_its_fixture() {
-    for g in Grammar::ALL {
+    for g in Grammar::ALL.iter().copied() {
         let tree = parse(g);
         let found: BTreeSet<&str> = all_nodes(&tree)
             .iter()
@@ -166,7 +166,7 @@ fn every_declared_comment_kind_appears_in_its_fixture() {
 /// fixture is wrong. Every assertion in this file rests on this one.
 #[test]
 fn every_fixture_parses_without_error_nodes() {
-    for g in Grammar::ALL {
+    for g in Grammar::ALL.iter().copied() {
         let tree = parse(g);
         let broken: Vec<_> = all_nodes(&tree)
             .iter()
@@ -182,56 +182,48 @@ fn every_fixture_parses_without_error_nodes() {
 /// differs. Three of the seven are a major ABI behind and the pinned runtime loads both.
 #[test]
 fn pinned_grammars_span_two_abi_versions() {
-    let expected = [
-        (Grammar::Go, 15),
-        (Grammar::Python, 15),
-        (Grammar::Rust, 15),
-        (Grammar::Java, 14),
-        (Grammar::TypeScript, 14),
-        (Grammar::Tsx, 14),
-        (Grammar::JavaScript, 15),
-    ];
-    for (g, abi) in expected {
-        assert_eq!(g.language().abi_version(), abi, "abi for {}", g.name());
+    for g in Grammar::ALL.iter().copied() {
+        assert_eq!(
+            g.language().abi_version(),
+            expected_abi(g),
+            "abi for {}",
+            g.name()
+        );
     }
 }
 
+/// An exhaustive match rather than a table: a new grammar fails to compile here until its ABI is
+/// stated, where a hand-written list would leave it unasserted and the suite green.
+fn expected_abi(g: Grammar) -> usize {
+    match g {
+        Grammar::Go | Grammar::Python | Grammar::Rust | Grammar::JavaScript => 15,
+        Grammar::Java | Grammar::TypeScript | Grammar::Tsx => 14,
+    }
+}
+
+/// Concern 5's whole answer. **Doc is not here**: for Go and Python it is positional and for Rust
+/// it is a grammar field paired with a subject, none of which a comment node alone can settle — so
+/// Doc belongs to concern 6, which returns the doc comment together with what it documents.
 #[derive(Debug, PartialEq, Eq)]
 enum Kind {
     Line,
     Block,
-    Doc,
 }
 
 fn classify(g: Grammar, n: Node, src: &str) -> Kind {
-    let body = text(n, src);
     match g {
-        // Rust settles Doc structurally; the rest is node kind.
-        Grammar::Rust => {
-            if n.child_by_field_name("doc").is_some() {
-                Kind::Doc
-            } else if n.kind() == "block_comment" {
+        // Two comment node kinds, so the node settles it.
+        Grammar::Rust | Grammar::Java => {
+            if n.kind() == "block_comment" {
                 Kind::Block
             } else {
                 Kind::Line
             }
         }
-        // Java: node kind separates Line from Block, marker text lifts Block to Doc.
-        Grammar::Java => {
-            if is_marker_doc(body) {
-                Kind::Doc
-            } else if n.kind() == "block_comment" {
-                Kind::Block
-            } else {
-                Kind::Line
-            }
-        }
-        // One node kind for both forms, so every distinction is the marker. An html_comment runs
-        // to end of line, which makes it Line.
+        // One node kind for both forms, so the opening marker settles it. An `html_comment` runs to
+        // end of line, which makes it Line.
         _ => {
-            if is_marker_doc(body) {
-                Kind::Doc
-            } else if body.starts_with("/*") {
+            if src[n.byte_range()].starts_with("/*") {
                 Kind::Block
             } else {
                 Kind::Line
@@ -240,92 +232,71 @@ fn classify(g: Grammar, n: Node, src: &str) -> Kind {
     }
 }
 
-/// Concern 5 — Line, Block or Doc, for all seven grammars. Node kind alone never settles it: for
-/// the five grammars whose only comment type is `comment`, Line versus Block comes from the
-/// opening marker, and Doc comes from concern 6's mechanism rather than from either.
+/// Concern 5 — Line or Block, for every grammar. Node kind alone never settles it: for the five
+/// grammars whose only comment type is `comment`, the answer comes from the opening marker.
 #[test]
 fn comment_kind_classification() {
-    let expected: &[(Grammar, &[(&str, Kind)])] = &[
-        (
-            Grammar::Go,
-            &[
-                ("//go:build linux", Kind::Line),
-                ("// Package probe", Kind::Line),
-                ("/* a detached block comment */", Kind::Block),
-            ],
-        ),
-        (
-            Grammar::Rust,
-            &[
-                ("//! Inner doc", Kind::Doc),
-                ("// a line comment", Kind::Line),
-                ("/* a block comment */", Kind::Block),
-                ("/// Documents", Kind::Doc),
-                ("/** A block doc comment. */", Kind::Doc),
-            ],
-        ),
-        (
-            Grammar::Java,
-            &[
-                ("// a line comment", Kind::Line),
-                ("/* a block comment */", Kind::Block),
-                ("/**\n * Documents an exported class.", Kind::Doc),
-            ],
-        ),
-        (
-            Grammar::TypeScript,
-            &[
-                ("// a line comment", Kind::Line),
-                ("/* a block comment */", Kind::Block),
-                ("<!-- an html comment -->", Kind::Line),
-                ("/** Documents an exported function. */", Kind::Doc),
-            ],
-        ),
-        (
-            Grammar::Tsx,
-            &[
-                ("// a line comment", Kind::Line),
-                ("/* a block comment */", Kind::Block),
-                ("<!-- an html comment -->", Kind::Line),
-                ("/** Documents an exported component. */", Kind::Doc),
-            ],
-        ),
-        (
-            Grammar::JavaScript,
-            &[
-                ("// a line comment", Kind::Line),
-                ("/* a block comment */", Kind::Block),
-                ("<!-- an html comment -->", Kind::Line),
-                ("/** Documents an exported function. */", Kind::Doc),
-            ],
-        ),
-    ];
-
-    for (g, cases) in expected {
-        let tree = parse(*g);
-        let src = source(*g);
+    for g in Grammar::ALL.iter().copied() {
+        let tree = parse(g);
+        let src = source(g);
         let comments: Vec<Node> = all_nodes(&tree)
             .into_iter()
-            .filter(|n| comment_kinds(*g).contains(&n.kind()))
+            .filter(|n| comment_kinds(g).contains(&n.kind()))
             .collect();
-        for (prefix, want) in *cases {
+        for (prefix, want) in expected_kinds(g) {
             let node = comments
                 .iter()
                 .find(|n| text(**n, src).starts_with(prefix))
                 .unwrap_or_else(|| panic!("{}: no comment starting {prefix:?}", g.name()));
-            assert_eq!(&classify(*g, *node, src), want, "{} {prefix:?}", g.name());
+            assert_eq!(&classify(g, *node, src), want, "{} {prefix:?}", g.name());
         }
     }
+}
 
-    // Python has no block comment form at all: every `comment` node is a Line comment, and Doc is
-    // a string rather than a comment node.
-    let tree = parse(Grammar::Python);
-    let src = source(Grammar::Python);
-    for n in all_nodes(&tree).iter().filter(|n| n.kind() == "comment") {
-        assert!(
-            text(*n, src).starts_with('#'),
-            "python comment is always Line"
-        );
+/// An exhaustive match, so an added grammar fails to compile here until its comment forms are
+/// classified — where a hand-written table would leave it unasserted and the suite green.
+fn expected_kinds(g: Grammar) -> &'static [(&'static str, Kind)] {
+    match g {
+        Grammar::Go => &[
+            ("//go:build linux", Kind::Line),
+            ("// Package probe", Kind::Line),
+            ("/* a detached block comment */", Kind::Block),
+        ],
+        // Python has no block comment form at all: every `comment` node is Line.
+        Grammar::Python => &[
+            ("#!/usr/bin/env python3", Kind::Line),
+            ("# a line comment", Kind::Line),
+        ],
+        Grammar::Rust => &[
+            ("//! Inner doc", Kind::Line),
+            ("// a line comment", Kind::Line),
+            ("/* a block comment */", Kind::Block),
+            ("/// Documents", Kind::Line),
+            ("/** A block doc comment. */", Kind::Block),
+        ],
+        Grammar::Java => &[
+            ("// a line comment", Kind::Line),
+            ("/* a block comment */", Kind::Block),
+            ("/**\n * Documents an exported class.", Kind::Block),
+        ],
+        Grammar::TypeScript => &[
+            ("// a line comment", Kind::Line),
+            ("/* a block comment */", Kind::Block),
+            ("<!-- an html comment -->", Kind::Line),
+            ("/** Documents an exported function. */", Kind::Block),
+        ],
+        Grammar::Tsx => &[
+            ("// a line comment", Kind::Line),
+            ("/* a block comment */", Kind::Block),
+            ("<!-- an html comment -->", Kind::Line),
+            ("/** Documents an exported component. */", Kind::Block),
+        ],
+        Grammar::JavaScript => &[
+            ("// a line comment", Kind::Line),
+            ("/* a block comment */", Kind::Block),
+            ("<!-- an html comment -->", Kind::Line),
+            ("/** Documents an exported function. */", Kind::Block),
+        ],
     }
 }
 
@@ -334,20 +305,24 @@ fn comment_kind_classification() {
 /// catch, so the two mechanisms are asserted against both forms.
 #[test]
 fn empty_and_banner_block_comments_are_not_doc_comments() {
-    // Rust: the grammar declines them — neither carries a `doc` field. Nothing lexical is needed.
+    // Rust: the grammar declines them — none carries a `doc` field. Nothing lexical is needed.
+    //
+    // `////////` is the line-comment form of the same hazard, and the claim the design's C8 rests
+    // on. It is pinned here rather than asserted in prose: a grammar bump that started attaching a
+    // `doc` field to it would leave every other test green while `banner` silently lost its gate
+    // tier and its Delete fix on exactly the input the rule exists to catch.
     let tree = parse(Grammar::Rust);
     let src = source(Grammar::Rust);
-    for body in ["/**/", "/*******/"] {
+    for body in ["/**/", "/*******/", "////////"] {
         let node = all_nodes(&tree)
             .into_iter()
             .find(|n| text(*n, src) == body)
             .unwrap_or_else(|| panic!("rust fixture has {body}"));
-        assert_eq!(node.kind(), "block_comment");
         assert!(
             node.child_by_field_name("doc").is_none(),
             "rust grammar declines {body} as a doc comment"
         );
-        assert_eq!(classify(Grammar::Rust, node, src), Kind::Block);
+        assert!(node.child_by_field_name("outer").is_none(), "{body}");
     }
 
     // TypeScript: no field exists, so the marker test carries it.
@@ -358,7 +333,10 @@ fn empty_and_banner_block_comments_are_not_doc_comments() {
             .into_iter()
             .find(|n| text(*n, src) == body)
             .unwrap_or_else(|| panic!("typescript fixture has {body}"));
-        assert_eq!(classify(Grammar::TypeScript, node, src), Kind::Block);
+        assert!(
+            !is_marker_doc(text(node, src)),
+            "{body} is not a doc comment"
+        );
     }
 
     // The naive test these replace, kept as the record of why the strict one exists.
@@ -409,9 +387,15 @@ fn rust_doc_comment_is_a_field_on_an_ordinary_comment_node() {
 
     // The `doc` child is the body with its markers already removed — concern 7, for free, and only
     // here.
+    // Selected by the field, not by the marker: `////////` also starts with `///`, and picking it
+    // lexically is the very mistake this test exists to rule out.
     let outer = comments
         .iter()
-        .find(|n| text(**n, src).starts_with("///"))
+        .find(|n| {
+            n.kind() == "line_comment"
+                && n.child_by_field_name("outer").is_some()
+                && n.child_by_field_name("doc").is_some()
+        })
         .expect("/// doc comment");
     let body = outer.child_by_field_name("doc").unwrap();
     assert_eq!(text(body, src), " Documents an exported function.\n");
@@ -629,46 +613,41 @@ fn subject_visibility_mechanisms() {
 /// body node: Go interposes a `statement_list` between `block` and its statements.
 #[test]
 fn statement_containers_and_counts() {
-    let expected: &[(Grammar, &str, &str, &str, usize)] = &[
-        (
-            Grammar::Go,
-            "function_declaration",
-            "Exported",
-            "statement_list",
-            3,
-        ),
-        (Grammar::Rust, "function_item", "exported", "block", 3),
-        (Grammar::Java, "method_declaration", "exported", "block", 3),
-        (
-            Grammar::TypeScript,
-            "function_declaration",
-            "exported",
-            "statement_block",
-            3,
-        ),
-        (
-            Grammar::Tsx,
-            "function_declaration",
-            "Component",
-            "statement_block",
-            3,
-        ),
-        (
-            Grammar::JavaScript,
-            "function_declaration",
-            "exported",
-            "statement_block",
-            3,
-        ),
-    ];
-
-    for (g, kind, name, container_kind, count) in expected {
+    for g in Grammar::ALL.iter().copied() {
+        let Some((kind, name, container, count)) = statement_case(g) else {
+            continue;
+        };
         assert_eq!(
-            statement_count(*g, kind, name, container_kind),
-            *count,
+            statement_count(g, kind, name, container),
+            count,
             "{} statement count",
             g.name()
         );
+    }
+}
+
+/// An exhaustive match, so an added grammar fails to compile until its statement container is
+/// stated. Python is `None` here and covered by its own test, because its doc comment sits inside
+/// the container and the count means something different there.
+fn statement_case(g: Grammar) -> Option<(&'static str, &'static str, &'static str, usize)> {
+    match g {
+        Grammar::Go => Some(("function_declaration", "Exported", "statement_list", 3)),
+        Grammar::Rust => Some(("function_item", "exported", "block", 3)),
+        Grammar::Java => Some(("method_declaration", "exported", "block", 3)),
+        Grammar::TypeScript => Some(("function_declaration", "exported", "statement_block", 3)),
+        Grammar::Tsx => Some(("function_declaration", "Component", "statement_block", 3)),
+        Grammar::JavaScript => Some(("function_declaration", "exported", "statement_block", 3)),
+        Grammar::Python => None,
+    }
+}
+
+/// Named children of a body that are not statements. A Rust statement-level attribute is a named
+/// child of `block`, so counting it inflates `density`'s denominator by one per attribute and makes
+/// the rule systematically harder to trip in attribute-heavy code.
+fn non_statement_kinds(g: Grammar) -> &'static [&'static str] {
+    match g {
+        Grammar::Rust => &["attribute_item", "inner_attribute_item"],
+        _ => &[],
     }
 }
 
@@ -708,6 +687,11 @@ fn python_statement_count_includes_its_docstring() {
 /// The enumeration spans declaration forms, not just functions. A private type is the commonest
 /// name a public doc comment leaks, so a pack that enumerates functions alone resolves nothing for
 /// exactly the case the rule exists to catch.
+///
+/// **This pins the mechanism, not an exhaustive list of forms.** Each language has more —
+/// Java `interface`, `enum`, `record` and fields; Rust `enum_item`, `trait_item`, `type_item`,
+/// `const_item`; TypeScript `enum_declaration` and `lexical_declaration`. Filling those lists is
+/// each pack's job in `laconic#bsnv`, where the carve-out tests that go with them live.
 #[test]
 fn file_declared_symbols_span_more_than_functions() {
     // Go: top-level declarations are named children of the root, and each form nests its name one
@@ -729,13 +713,20 @@ fn file_declared_symbols_span_more_than_functions() {
             "var_declaration" => ("var_spec", "var"),
             _ => continue,
         };
+        // `children_by_field_name`, not `child_by_field_name`: a spec binds N names, so
+        // `var Foo, bar = 1, 2` yields two symbols and reading the first field drops `bar`
+        // entirely — the private declaration `implInInterface` would then fail to resolve.
         let mut inner = decl.walk();
-        for spec in decl.named_children(&mut inner) {
-            if spec.kind() != spec_kind {
-                continue;
+        let specs: Vec<Node> = decl
+            .named_children(&mut inner)
+            .filter(|n| n.kind() == spec_kind)
+            .collect();
+        for spec in specs {
+            let mut c = spec.walk();
+            for name in spec.children_by_field_name("name", &mut c) {
+                let name = text(name, src);
+                declared.push((form, name, name.starts_with(char::is_uppercase)));
             }
-            let name = text(spec.child_by_field_name("name").unwrap(), src);
-            declared.push((form, name, name.starts_with(char::is_uppercase)));
         }
     }
     assert_eq!(
@@ -743,6 +734,9 @@ fn file_declared_symbols_span_more_than_functions() {
         vec![
             ("const", "MaxDepth", true),
             ("var", "defaultName", false),
+            // Both names of a multi-name spec; reading only the first field drops `height`.
+            ("var", "Width", true),
+            ("var", "height", false),
             ("type", "Config", true),
             ("type", "internalState", false),
             ("func", "Exported", true),
@@ -754,11 +748,17 @@ fn file_declared_symbols_span_more_than_functions() {
     // class can nest inside another — so the enumeration is a walk rather than a sibling scan.
     let tree = parse(Grammar::Java);
     let src = source(Grammar::Java);
+    // A keyword **child** of `modifiers`, not a substring of its text. An annotation carries its
+    // arguments inside that text, so `@SuppressWarnings("public-api") private void hidden()` reads
+    // as public under a substring test and `implInInterface` treats a private method as a subject.
     let public = |n: Node| {
         let mut c = n.walk();
         n.children(&mut c)
             .find(|m| m.kind() == "modifiers")
-            .is_some_and(|m| text(m, src).contains("public"))
+            .is_some_and(|m| {
+                let mut mc = m.walk();
+                m.children(&mut mc).any(|k| k.kind() == "public")
+            })
     };
     let mut declared: Vec<(&str, &str, bool)> = all_nodes(&tree)
         .into_iter()

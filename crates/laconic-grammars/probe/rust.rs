@@ -8,6 +8,8 @@
 
 /*******/
 
+////////
+
 /// Documents an exported function.
 pub fn exported(a: i32) -> i32 {
     let x = a + 1; // a trailing comment

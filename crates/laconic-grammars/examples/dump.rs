@@ -2,7 +2,7 @@ use laconic_grammars::Grammar;
 use std::collections::BTreeSet;
 
 fn main() {
-    for g in Grammar::ALL {
+    for g in Grammar::ALL.iter().copied() {
         let (name, src) = g.probe_fixture();
         let mut parser = g.parser();
         let tree = parser.parse(src, None).expect("parse");

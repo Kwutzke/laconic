@@ -5,6 +5,7 @@
 //! discarded, and only then can `deadIgnore` ask whether a named rule ran and did not fire, and
 //! `ignoreReason` report a directive carrying no reason.
 
+use crate::domain::CommentKind;
 use crate::pipeline::FileAnalysis;
 use crate::registry::{Disposition, ErrorPolicy, FixShape, Registry, Tier};
 use crate::report::{Finding, WithheldNote, line_column};
@@ -152,6 +153,37 @@ fn reconcile(
         {
             p.finding.suppressed = true;
         }
+    }
+
+    // A directive that bound to no block still lacks a reason, and a directive protecting nothing
+    // is the one a reader most needs told about. Reporting only bound directives would make
+    // `ignoreReason`'s completeness depend on the binding step, silently.
+    for directive in &analysis.unbound_directives {
+        if directive.reason.is_some() {
+            continue;
+        }
+        let Some(entry) = registry.get("ignoreReason").filter(|e| e.enabled) else {
+            continue;
+        };
+        let Some(disposition) = entry.disposition(CommentKind::Line) else {
+            continue;
+        };
+        pending.push(Pending {
+            block: None,
+            finding: build(
+                file,
+                src,
+                entry.id,
+                disposition,
+                crate::rule::RuleHit::new(
+                    directive.span.clone(),
+                    format!(
+                        "add a reason to this directive: `laconic:ignore {} — <why this comment stays>`",
+                        directive.rule
+                    ),
+                ),
+            ),
+        });
     }
 
     for (bi, block) in analysis.blocks.iter().enumerate() {

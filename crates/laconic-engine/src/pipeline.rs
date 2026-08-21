@@ -33,6 +33,12 @@ pub struct FileAnalysis {
     pub source_extensions: Vec<&'static str>,
     /// The grammar this file was parsed with, for `commentedOutCode`.
     pub grammar: Grammar,
+    /// Directives that bound to no block.
+    ///
+    /// Kept rather than dropped: `ignoreReason` fires on a directive lacking a reason, and a
+    /// directive protecting nothing is exactly the one a reader most needs told about. Dropping
+    /// them made the rule's completeness depend on the binding step, and its misses silent.
+    pub unbound_directives: Vec<IgnoreDirective>,
 }
 
 /// Why a file produced no analysis. None of these is an error: laconic runs over whole
@@ -72,7 +78,7 @@ pub fn analyse(
         .expect("a parser with a language set always returns a tree");
     let root = tree.root_node();
 
-    if is_generated(pack, root, src) {
+    if is_generated(pack, src) {
         return Err(Skipped::GeneratedFile);
     }
 
@@ -89,27 +95,24 @@ pub fn analyse(
     }
     sources.sort_by_key(|n| n.start_byte());
 
-    let mut ordinary: Vec<(Node, Comment)> = Vec::new();
-    let mut directives: Vec<IgnoreDirective> = Vec::new();
-    for node in sources {
-        let body = pack.comment_body(node, src);
-        if is_machine_directive(pack, &body) {
-            continue;
-        }
-        let comment = Comment {
-            span: node.byte_range(),
-            start_row: node.start_position().row,
-            end_row: node.end_position().row,
-            trailing: has_code_before(src, node.start_byte()),
-            body,
-        };
-        match parse_ignore_directive(&comment) {
-            Some(directive) => directives.push(directive),
-            None => ordinary.push((node, comment)),
-        }
-    }
-
-    let runs = group(&ordinary);
+    // **Grouping runs over every comment, before anything is removed.** An earlier version stripped
+    // machine directives first, which broke row adjacency wherever a directive sat inside a run: the
+    // comments above and below it stopped being one block, and a narration block split by a
+    // `//nolint:` line became two gate-tier findings where the source has one comment.
+    let all: Vec<(Node, Comment)> = sources
+        .into_iter()
+        .map(|node| {
+            let comment = Comment {
+                span: node.byte_range(),
+                start_row: node.start_position().row,
+                end_row: node.end_position().row,
+                trailing: has_code_before(src, node.start_byte()),
+                body: pack.comment_body(node, src),
+            };
+            (node, comment)
+        })
+        .collect();
+    let runs = group(&all);
 
     // Every documentable declaration becomes a subject, whether or not a comment sits above it:
     // `density` measures a function nobody documented, and a subject that exists only where a
@@ -123,9 +126,31 @@ pub fn analyse(
 
     let mut blocks: Vec<CommentBlock> = Vec::new();
 
+    let mut directives: Vec<IgnoreDirective> = Vec::new();
+
     for run in runs {
-        let nodes: Vec<Node> = run.iter().map(|i| ordinary[*i].0).collect();
-        let comments: Vec<Comment> = run.iter().map(|i| ordinary[*i].1.clone()).collect();
+        // Machine directives are dropped and ignore directives lifted out **within** the run, so
+        // neither changes which comments are one block. A directive left in the block would join
+        // its text to what `narration` and `restate` match against, so a suppression would alter
+        // the finding it suppresses.
+        let mut nodes: Vec<Node> = Vec::new();
+        let mut comments: Vec<Comment> = Vec::new();
+        for i in run {
+            let (node, comment) = &all[i];
+            if is_machine_directive(pack, &comment.body) {
+                continue;
+            }
+            match parse_ignore_directive(comment) {
+                Some(directive) => directives.push(directive),
+                None => {
+                    nodes.push(*node);
+                    comments.push(comment.clone());
+                }
+            }
+        }
+        if comments.is_empty() {
+            continue;
+        }
 
         let doc = docs
             .iter()
@@ -174,14 +199,23 @@ pub fn analyse(
         });
     }
 
-    bind_ignore_directives(&mut blocks, directives);
+    let unbound_directives = bind_ignore_directives(&mut blocks, directives);
 
     // The licence carve-out is top-of-file only. A mid-file notice stays, because `attribution`
     // is the rule that must still see it and no deterministic test separates a required notice
     // from vanity.
-    let header_is_licence = blocks
-        .first()
-        .is_some_and(|b| b.comments[0].start_row < 5 && config.is_licence_header(b));
+    //
+    // Two guards beyond the text test. The block must be the first one and must not be a doc
+    // comment: a package comment is a documented public surface, and deleting it from the analysis
+    // would hide every finding on it. And it must begin within the file's preamble — machine
+    // directives and blank lines can push a real notice down a few rows, but a notice fifty rows in
+    // is a mid-file notice and belongs to `attribution`.
+    const PREAMBLE_ROWS: usize = 10;
+    let header_is_licence = blocks.first().is_some_and(|b| {
+        b.kind != CommentKind::Doc
+            && b.comments[0].start_row < PREAMBLE_ROWS
+            && config.is_licence_header(b)
+    });
     if header_is_licence {
         blocks.remove(0);
     }
@@ -191,6 +225,7 @@ pub fn analyse(
         subjects,
         declared: pack.declared_symbols(root, src),
         has_error_nodes: has_error_nodes(root),
+        unbound_directives,
         source_extensions: pack.extensions().iter().map(|(e, _)| *e).collect(),
         grammar,
     })
@@ -212,9 +247,16 @@ fn collect_comment_nodes<'t>(pack: &dyn Pack, grammar: Grammar, root: Node<'t>) 
     out
 }
 
-fn is_generated(pack: &dyn Pack, root: Node, src: &str) -> bool {
-    let head = &src[..src.len().min(2048)];
-    let _ = root;
+/// Generated-file markers, looked for in the file's opening bytes.
+///
+/// The cut is taken at a character boundary, not at byte 2048: slicing mid-character panics, and a
+/// panic in a pre-commit hook or in CI is the only output anyone sees.
+fn is_generated(pack: &dyn Pack, src: &str) -> bool {
+    let mut cut = src.len().min(2048);
+    while cut > 0 && !src.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let head = &src[..cut];
     pack.generated_file_markers()
         .iter()
         .any(|m| head.contains(m))
@@ -274,20 +316,24 @@ fn parse_ignore_directive(comment: &Comment) -> Option<IgnoreDirective> {
 }
 
 /// A directive binds to the block below it, or to the block on its own line when trailing.
-fn bind_ignore_directives(blocks: &mut [CommentBlock], directives: Vec<IgnoreDirective>) {
+/// Returns the directives that bound to nothing.
+fn bind_ignore_directives(
+    blocks: &mut [CommentBlock],
+    directives: Vec<IgnoreDirective>,
+) -> Vec<IgnoreDirective> {
+    let mut unbound = Vec::new();
     for directive in directives {
         let target = blocks.iter_mut().find(|b| {
-            b.comments
-                .first()
-                .is_some_and(|c| c.start_row == directive.start_row + 1)
-                || b.comments
-                    .first()
-                    .is_some_and(|c| c.start_row == directive.start_row)
+            b.comments.first().is_some_and(|c| {
+                c.start_row == directive.start_row + 1 || c.start_row == directive.start_row
+            })
         });
-        if let Some(block) = target {
-            block.ignore = Some(directive);
+        match target {
+            Some(block) => block.ignore = Some(directive),
+            None => unbound.push(directive),
         }
     }
+    unbound
 }
 
 /// The outermost node that begins at or after `offset` and is not a comment.
