@@ -105,7 +105,17 @@ pub fn analyse(
     }
 
     let runs = group(&ordinary);
-    let mut subjects: Vec<Subject> = Vec::new();
+
+    // Every documentable declaration becomes a subject, whether or not a comment sits above it:
+    // `density` measures a function nobody documented, and a subject that exists only where a
+    // block attached would make that rule unable to see one.
+    let subject_nodes = pack.subject_nodes(root);
+    let subjects: Vec<Subject> = subject_nodes
+        .iter()
+        .map(|n| build_subject(pack, *n, src))
+        .collect();
+    let subject_index = |node: Node| subject_nodes.iter().position(|s| s.id() == node.id());
+
     let mut blocks: Vec<CommentBlock> = Vec::new();
 
     for run in runs {
@@ -133,15 +143,17 @@ pub fn analyse(
             }
         };
 
-        let subject_node = match doc {
-            Some(d) => Some(d.subject),
-            None if attachment == Attachment::AttachedBelow => following,
+        let subject = match doc {
+            Some(d) => subject_index(d.subject),
+            None if attachment == Attachment::AttachedBelow => following.and_then(subject_index),
             None => None,
         };
-        let subject = subject_node.map(|n| {
-            subjects.push(build_subject(pack, n, src));
-            subjects.len() - 1
-        });
+        let attached_identifiers = match attachment {
+            Attachment::AttachedBelow => following
+                .map(|n| pack.bound_identifiers(n, src))
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
 
         let span = comments[0].span.start..comments.last().unwrap().span.end;
         blocks.push(CommentBlock {
@@ -150,6 +162,8 @@ pub fn analyse(
             span,
             subject,
             ignore: None,
+            in_error_subtree: following.is_some_and(|n| n.has_error()),
+            attached_identifiers,
             comments,
         });
     }

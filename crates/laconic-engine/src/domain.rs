@@ -101,13 +101,22 @@ pub struct CommentBlock {
     pub kind: CommentKind,
     pub attachment: Attachment,
     pub span: Range<usize>,
-    /// Index into the file's subjects, when the block is attached to one.
+    /// Index into the file's subjects, when the block documents a declaration.
+    ///
+    /// A block attached to an ordinary statement has none: a statement is not a subject. What
+    /// `restate` needs from that statement is [`CommentBlock::attached_identifiers`].
     pub subject: Option<usize>,
+    /// The identifiers bound by whatever this block attaches to — `restate`, which fires when the
+    /// block's content tokens are a subset of these.
+    pub attached_identifiers: Vec<String>,
     /// The directive protecting this block, lifted out of it during grouping. Lifting rather than
     /// merging matters: otherwise the directive's own text joins the block and changes what
     /// `narration` and `restate` match against, so a suppression would alter the finding it
     /// suppresses.
     pub ignore: Option<IgnoreDirective>,
+    /// The block sits inside a subtree containing an ERROR node, so subject resolution and
+    /// attachment are unreliable for it and the rules that depend on them are withheld.
+    pub in_error_subtree: bool,
 }
 
 impl CommentBlock {

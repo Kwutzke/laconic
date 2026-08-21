@@ -84,6 +84,24 @@ impl Pack for GoPack {
         out
     }
 
+    /// Concern 6's other half. The same set `doc_comments` scans, minus the requirement that a
+    /// comment actually sits above the declaration.
+    fn subject_nodes<'t>(&self, root: Node<'t>) -> Vec<Node<'t>> {
+        let mut cursor = root.walk();
+        let mut stack = vec![root];
+        let mut out = Vec::new();
+        while let Some(n) = stack.pop() {
+            for child in n.named_children(&mut cursor) {
+                if DOCUMENTABLE.contains(&child.kind()) {
+                    out.push(child);
+                }
+                stack.push(child);
+            }
+        }
+        out.sort_by_key(|n| n.start_byte());
+        out
+    }
+
     fn comment_body(&self, node: Node, src: &str) -> String {
         strip_markers(&src[node.byte_range()])
     }

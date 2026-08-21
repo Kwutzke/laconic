@@ -62,6 +62,14 @@ pub trait Pack {
     /// this enumerates rather than classifying what concern 2 already found.
     fn doc_comments<'t>(&self, root: Node<'t>, src: &str) -> Vec<DocComment<'t>>;
 
+    /// Concern 6's other half — every node that *can* be documented, whether or not one is.
+    ///
+    /// `density` measures a function whether or not anyone documented it, and `docbloat` and
+    /// `implInInterface` need the declaration rather than whatever a comment happened to sit above.
+    /// A pack that can answer `doc_comments` already knows this set; both read one piece of
+    /// knowledge, which is why this is not a twelfth concern.
+    fn subject_nodes<'t>(&self, root: Node<'t>) -> Vec<Node<'t>>;
+
     /// Concern 7 — the comment body with its markers removed.
     ///
     /// Rules match content and must never see `//`, `#`, `/**` or `*` continuation leaders: a

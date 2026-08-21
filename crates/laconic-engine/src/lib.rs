@@ -4,11 +4,16 @@
 //! a pack, not touching the engine — charter constraint 4 — and what protects that is the pack
 //! interface being enumerated and the trait being open, not a claim that languages are similar.
 
+pub mod dispatch;
 pub mod domain;
 pub mod exclude;
 pub mod pack;
 pub mod pipeline;
+pub mod registry;
+pub mod report;
+pub mod rule;
 
+pub use dispatch::{Rules, dispatch, gates, is_autofixable};
 pub use domain::{
     Attachment, Comment, CommentBlock, CommentKind, DeclaredSymbol, IgnoreDirective, Subject,
     Visibility,
@@ -16,3 +21,8 @@ pub use domain::{
 pub use exclude::Config;
 pub use pack::{BlankLinePolicy, DocComment, Pack};
 pub use pipeline::{FileAnalysis, Skipped, analyse, resolve};
+pub use registry::{Dispatch, Disposition, ErrorPolicy, FixShape, Registry, RuleEntry, Tier};
+pub use report::{
+    EXIT_CLEAN, EXIT_GATE, EXIT_USAGE, Finding, Report, UnreadableFile, WithheldNote,
+};
+pub use rule::{BlockContext, BlockRule, RuleHit, SubjectContext, SubjectRule};
