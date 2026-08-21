@@ -1,2 +1,5 @@
 # roborev snapshots
 /.roborev/
+
+# cargo build output
+/target/
