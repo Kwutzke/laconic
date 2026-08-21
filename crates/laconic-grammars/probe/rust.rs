@@ -12,6 +12,7 @@
 
 /// Documents an exported function.
 pub fn exported(a: i32) -> i32 {
+    #[allow(clippy::let_and_return)]
     let x = a + 1; // a trailing comment
     println!("{x}");
 

@@ -202,6 +202,21 @@ fn a_directive_without_a_reason_is_a_gate_finding() {
     assert_eq!(report.exit_code(), laconic_engine::EXIT_GATE);
 }
 
+/// A directive protecting nothing is the one a reader most needs told about, and it reaches
+/// `ignoreReason` through `unbound_directives` rather than through a block. Nothing exercised that
+/// path: deleting the loop, or inverting its `reason.is_some()` guard, left the suite green.
+#[test]
+fn a_reasonless_directive_binding_to_no_block_still_fires_ignore_reason() {
+    let src = "package x\n\n// laconic:ignore narration\n\nfunc F() {}\n";
+    let report = report_for(src, narration_stub());
+    let f = report
+        .findings
+        .iter()
+        .find(|f| f.rule == "ignoreReason")
+        .expect("ignoreReason fired for an unbound directive");
+    assert_eq!((f.tier, f.fix), (Tier::Gate, FixShape::None));
+}
+
 /// Fires only when the named rule ran and did not fire.
 #[test]
 fn dead_ignore_fires_when_its_rule_ran_and_did_not_fire() {

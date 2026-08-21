@@ -72,6 +72,25 @@ fn a_python_docstring_documents_its_enclosing_scope() {
 
 /// And the docstring is discounted from the statement count, so the same shape counts the same in
 /// Python as anywhere else.
+/// A Rust statement-level attribute is a named child of `block`, so counting it inflates
+/// `density`'s denominator by one per attribute. The probe pins this as a grammar fact; nothing
+/// pinned the pack's own exclusion.
+#[test]
+fn a_rust_attribute_is_not_a_statement() {
+    let with_attr = "fn f() {\n    #[allow(unused)]\n    let x = 1;\n    let _ = x;\n}\n";
+    let without = "fn f() {\n    let x = 1;\n    let _ = x;\n}\n";
+    let count = |src: &str| {
+        analyse_str("x.rs", src)
+            .subjects
+            .iter()
+            .map(|s| s.statement_count)
+            .max()
+            .unwrap_or(0)
+    };
+    assert_eq!(count(with_attr), 2, "two statements, attribute excluded");
+    assert_eq!(count(with_attr), count(without));
+}
+
 #[test]
 fn a_python_docstring_is_not_a_statement() {
     let with_doc = "def f():\n    \"\"\"Doc.\"\"\"\n    x = 1\n    return x\n";

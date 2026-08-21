@@ -551,7 +551,10 @@ fn subject_visibility_mechanisms() {
         assert_eq!(found, vis, "rust {name}");
     }
 
-    // Java: a `modifiers` child containing the keyword.
+    // Java: a keyword **child** of `modifiers`, never a substring of its text. An annotation
+    // carries its arguments inside that text, so `@SuppressWarnings("public-api") private void
+    // hidden()` reads as public under a substring test — which is what this assertion used to
+    // document for the one concern a pack author implements `visibility` from.
     let tree = parse(Grammar::Java);
     let src = source(Grammar::Java);
     for (name, vis) in [("exported", "public"), ("hidden", "private")] {
@@ -561,8 +564,30 @@ fn subject_visibility_mechanisms() {
             .children(&mut cursor)
             .find(|n| n.kind() == "modifiers")
             .expect("modifiers");
-        assert!(text(modifiers, src).contains(vis), "java {name}");
+        let mut mc = modifiers.walk();
+        let keywords: Vec<&str> = modifiers.children(&mut mc).map(|k| k.kind()).collect();
+        assert!(keywords.contains(&vis), "java {name}: got {keywords:?}");
+        for other in ["public", "private", "protected"] {
+            if other != vis {
+                assert!(
+                    !keywords.contains(&other),
+                    "java {name}: also reads as {other}"
+                );
+            }
+        }
     }
+    // And the hazard is real in this fixture rather than hypothetical: `hidden`'s modifiers text
+    // does contain "public", so a substring test classifies a private method as exported.
+    let hidden = find_named(&tree, "method_declaration", "hidden", src);
+    let mut hc = hidden.walk();
+    let hidden_modifiers = hidden
+        .children(&mut hc)
+        .find(|n| n.kind() == "modifiers")
+        .expect("modifiers");
+    assert!(
+        text(hidden_modifiers, src).contains("public"),
+        "the annotation that makes the substring reading wrong is gone from the fixture"
+    );
 
     // TypeScript, TSX and JavaScript: an `export_statement` wrapping the declaration at file
     // scope. Three separate grammars answering it identically is what makes one pack over three
@@ -644,6 +669,9 @@ fn statement_case(g: Grammar) -> Option<(&'static str, &'static str, &'static st
 /// Named children of a body that are not statements. A Rust statement-level attribute is a named
 /// child of `block`, so counting it inflates `density`'s denominator by one per attribute and makes
 /// the rule systematically harder to trip in attribute-heavy code.
+///
+/// `probe/rust.rs` carries one attribute inside `exported` for this reason: without it the filter
+/// removed nothing from any fixture and the claim was prose the pin could not break.
 fn non_statement_kinds(g: Grammar) -> &'static [&'static str] {
     match g {
         Grammar::Rust => &["attribute_item", "inner_attribute_item"],

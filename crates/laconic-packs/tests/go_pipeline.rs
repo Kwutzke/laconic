@@ -45,6 +45,22 @@ fn an_interface_method_comment_is_a_doc_comment() {
     assert_eq!(block.kind, CommentKind::Doc);
 }
 
+/// Only `var_declaration` wraps its specs in a `var_spec_list`; `const` and `type` list theirs as
+/// direct children. The nested arm that unwraps the list was covered by no fixture — deleting it
+/// left `var (\n\tFoo = 1\n)` declaring nothing, and `implInInterface` resolving nothing against a
+/// grouped var block.
+#[test]
+fn a_grouped_var_block_declares_its_names() {
+    let src = "package x\n\nvar (\n\tFoo = 1\n\tbar = 2\n)\n";
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let names: Vec<&str> = a.declared.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"Foo"), "got {names:?}");
+    assert!(names.contains(&"bar"), "got {names:?}");
+}
+
 /// Concern 1 — resolution is per extension. A file no pack claims is skipped silently, because
 /// laconic runs over whole repositories and warning on every `.json` makes the output unusable.
 #[test]

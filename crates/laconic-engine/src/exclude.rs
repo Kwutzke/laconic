@@ -43,19 +43,17 @@ impl Config {
         })
     }
 
-    /// A licence or copyright notice, which is carved out when it sits at the top of a file.
+    /// Whether a block reads as a licence or copyright notice. Position is the caller's test, not
+    /// this one's — `attribution` must still fire on a mid-file notice.
     ///
     /// The marker must **open a line**. Matching anywhere in the body deletes any first block that
     /// merely mentions a licence — and the commonest first block in a Go file is the package doc
     /// comment, so `// Package x implements the MIT-licensed parser.` would vanish whole, taking a
     /// pkg.go.dev surface with it.
     ///
-    /// The position test is the caller's: `attribution` must still fire on a mid-file notice,
-    /// which is the case no deterministic test can separate from vanity.
     pub fn is_licence_header(&self, block: &CommentBlock) -> bool {
         const MARKERS: &[&str] = &[
             "copyright",
-            "licensed under",
             "licence",
             "license",
             "spdx-license-identifier",
