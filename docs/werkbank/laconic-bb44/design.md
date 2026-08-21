@@ -201,7 +201,7 @@ can express them.
 | 2 | Which grammar node types carry comments | declaration | extraction. There is no node type common to all grammars, so this cannot be an engine constant |
 | 3 | Machine-directive prefixes | declaration | stripping, before any rule runs |
 | 4 | Generated-file markers | declaration | file-level exclusion |
-| 5 | Comment kind — Line, Block or Doc | strategy | every rule, via its per-kind disposition |
+| 5 | Comment kind — Line or Block | strategy | every rule, via its per-kind disposition. Doc is concern 6's, not this one's: in three of the five languages Doc is positional or structural and cannot be decided from a comment node alone, so splitting it here would make concern 5 unanswerable for them |
 | 6 | The doc comment and the subject it documents | strategy | `docbloat`, `implInInterface` (C8) |
 | 7 | Comment body, with markers stripped | strategy | `banner` and every deny-list rule, which match content and must not see `//`, `#`, `/**` or `*` continuation leaders |
 | 8 | A subject's visibility | strategy | `implInInterface`, which fires only on a public subject and so asks this before asking concern 11. Not a boolean — `pub(crate)`, a TypeScript class member, and a package-level Go identifier are different questions |
