@@ -670,7 +670,7 @@ fn statement_case(g: Grammar) -> Option<(&'static str, &'static str, &'static st
 /// child of `block`, so counting it inflates `density`'s denominator by one per attribute and makes
 /// the rule systematically harder to trip in attribute-heavy code.
 ///
-/// `probe/rust.rs` carries one attribute inside `exported` for this reason: without it the filter
+/// The Rust fixture carries one attribute inside `exported` for this reason: without it the filter
 /// removed nothing from any fixture and the claim was prose the pin could not break.
 fn non_statement_kinds(g: Grammar) -> &'static [&'static str] {
     match g {
