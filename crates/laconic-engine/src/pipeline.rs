@@ -1,13 +1,13 @@
 //! The per-file pipeline, from a path to blocks that are ready to dispatch.
 //!
-//! `resolve pack by extension → parse → extract comment nodes → classify and strip → group into
-//! blocks → lift out ignore directives → resolve attachment, kind and subject → drop excluded
-//! regions`.
+//! `resolve pack by extension → parse → extract comment nodes → group into runs → drop machine
+//! directives and lift out ignore directives within each run → resolve attachment, kind and
+//! subject → drop excluded regions`.
 //!
-//! The design states the order as group-then-strip. Stripping a machine directive out of a block
-//! it had already joined would mean splitting that block and rejoining its remainder, so grouping
-//! here runs over the comments that survive classification instead. Same blocks, no split-and-
-//! rejoin path to get wrong.
+//! **Grouping runs over every comment, before anything is removed** — the design's order, and the
+//! reason is that removal changes row adjacency. A directive inside a run split the block around
+//! it; a directive at the tail of one detached the block from the code below. Adjacency is
+//! therefore measured over the run's own extent, not over what survives it.
 
 use crate::domain::{
     Attachment, Comment, CommentBlock, CommentKind, DeclaredSymbol, IgnoreDirective, Subject,

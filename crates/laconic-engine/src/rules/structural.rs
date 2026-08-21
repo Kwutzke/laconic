@@ -35,9 +35,10 @@ impl BlockRule for Restate {
         "restate"
     }
 
-    /// Fires when the comment's content tokens are a subset of the identifiers the code below it
-    /// binds. A comment naming the same identifiers while saying *why* is a subset by this test
-    /// and is the most valuable comment in the file, which is why this rule ships autofix off.
+    /// Fires when the comment's content tokens are a subset of the identifiers bound by the code
+    /// it is attached to — below it, or beside it for a trailing comment. A comment naming the
+    /// same identifiers while saying *why* is a subset by this test and is the most valuable
+    /// comment in the file, which is why this rule ships autofix off.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
         // Below the code or beside it. A detached block attaches to nothing, so there is nothing
         // for its tokens to be a subset of.
@@ -64,7 +65,7 @@ impl BlockRule for Restate {
         }
         Some(RuleHit::new(
             ctx.block.span.clone(),
-            "remove this comment: it names only what the code below it already says",
+            "remove this comment: it names only what the code it is attached to already says",
         ))
     }
 }

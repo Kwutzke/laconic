@@ -19,8 +19,12 @@ pub struct Rules {
     pub subject: Vec<Box<dyn SubjectRule>>,
 }
 
-/// A finding still carrying the block it came from, so reconcile can match it against that block's
-/// ignore directive.
+/// A finding still carrying the block whose ignore directive reconcile must match it against.
+///
+/// For a per-block rule that is the block the finding came from. For `density` it is not: a
+/// per-subject finding comes from no block, and this holds whichever of the subject's blocks
+/// carries the directive covering it. Suppression is all the field is for — anything wanting the
+/// finding's origin needs a different one.
 struct Pending {
     block: Option<usize>,
     finding: Finding,
@@ -106,7 +110,7 @@ pub fn dispatch(
         if entry.dispatch != Dispatch::PerSubject {
             continue;
         }
-        for subject in analysis.subjects.iter() {
+        for (si, subject) in analysis.subjects.iter().enumerate() {
             // Blocks **inside** the subject's span, not blocks attached to it. `density` is per
             // function, and a comment inside a function body attaches to the statement below it —
             // so grouping by attachment would give every statement its own denominator and no
@@ -139,10 +143,19 @@ pub fn dispatch(
             // §4 says a protected block is dispatched and its findings recorded as suppressed, with
             // no exemption for the one per-subject rule — and without this there is no way to
             // silence `density` short of disabling it in config.
-            let covering = indexed
+            //
+            // The subject's own doc block counts too, and it is not in `indexed`: a reader puts
+            // `// laconic:ignore density — …` above the function, where it binds to the doc
+            // comment sitting above the subject's span. Searched only inside, that directive was a
+            // silent no-op — the finding reported unsuppressed, `ignoreReason` quiet because the
+            // directive has a reason, and `deadIgnore` quiet because `density` never enters `ran`.
+            let covering = analysis
+                .blocks
                 .iter()
+                .enumerate()
+                .filter(|(i, b)| indexed.iter().any(|(j, _)| j == i) || b.subject == Some(si))
                 .find(|(_, b)| b.ignore.as_ref().is_some_and(|d| d.rule == entry.id))
-                .map(|(i, _)| *i);
+                .map(|(i, _)| i);
             let ctx = SubjectContext { subject, blocks };
             if let Some(hit) = rule.check(&ctx) {
                 pending.push(Pending {

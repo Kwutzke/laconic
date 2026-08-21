@@ -102,11 +102,17 @@ pub trait Pack {
     /// resolve a name in a doc comment. Concern 8 describes one subject and cannot answer this.
     fn declared_symbols(&self, root: Node, src: &str) -> Vec<DeclaredSymbol>;
 
-    /// The identifiers a subject binds, split on camelCase and snake_case — `restate`.
+    /// The identifiers a node binds, split on camelCase and snake_case — `restate`.
     ///
-    /// The subject's **header**, not its body: a function that prints `x` would otherwise bind
-    /// every identifier its body mentions, and `restate` — which fires when a comment's tokens are
-    /// a subset of these — would match almost any comment above almost any function.
+    /// Called with whatever a block attaches to, which is a declaration for a block above one and
+    /// an ordinary statement for a trailing block — not only with a subject.
+    ///
+    /// The node's **header**, not its body: a function that prints `x` would otherwise bind every
+    /// identifier its body mentions, and `restate` — which fires when a comment's tokens are a
+    /// subset of these — would match almost any comment above almost any function. The exclusion
+    /// is keyed on the `body` field, so it protects only nodes that have one; `preceding_code_node`
+    /// returns the outermost node ending at the offset for that reason, since the inner `block` of
+    /// a loop carries no `body` field and would leak the whole loop body.
     ///
     /// Provided, because every pinned grammar names identifier nodes with an `identifier` suffix
     /// and names the body field `body`. A language that does neither overrides this, which is the
