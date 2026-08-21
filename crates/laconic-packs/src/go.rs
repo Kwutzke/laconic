@@ -4,6 +4,7 @@
 //! the mechanism most likely to expose a positional assumption hiding in the engine rather than
 //! in a pack.
 
+use crate::common::rows_of;
 use laconic_engine::domain::{CommentKind, DeclaredSymbol, Visibility};
 use laconic_engine::pack::{BlankLinePolicy, DocComment, Pack};
 use laconic_grammars::Grammar;
@@ -167,6 +168,20 @@ impl Pack for GoPack {
         list.named_children(&mut cursor)
             .filter(|n| !n.is_extra())
             .count()
+    }
+
+    /// The `block` for a func, and for `type T struct{…}` the type literal — `type_declaration`
+    /// names no fields at all, so reading a field would leave the relative test dead on the whole
+    /// set this pack deliberately makes documentable.
+    fn body_rows(&self, subject: Node, _src: &str) -> Option<usize> {
+        if let Some(body) = subject.child_by_field_name("body") {
+            return Some(rows_of(body));
+        }
+        let mut cursor = subject.walk();
+        let spec = subject
+            .named_children(&mut cursor)
+            .find(|n| n.kind() == "type_spec")?;
+        Some(rows_of(spec.child_by_field_name("type")?))
     }
 
     fn blank_line_policy(&self) -> BlankLinePolicy {

@@ -8,4 +8,12 @@ package docbloat
 // And a sixth.
 // And a seventh.
 // And an eighth.
-func F() {}
+// And a ninth.
+// And a tenth.
+// And an eleventh.
+// And a twelfth.
+// And a thirteenth.
+func F() int {
+	n := 1
+	return n
+}

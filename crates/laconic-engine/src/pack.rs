@@ -84,16 +84,16 @@ pub trait Pack {
 
     /// Concern 9's other half — the rows that body spans, for `docbloat`'s relative test.
     ///
-    /// `None` when the subject has no body: a Go `package_clause`, a struct field, a const. There
-    /// is nothing to measure a doc comment against, and treating the declaration's own extent as a
-    /// body makes every four-line package comment a finding.
+    /// `None` when the subject has no body at all: a Go `package_clause`, a const, a file root.
+    /// There is nothing to measure a doc comment against, and treating the declaration's own
+    /// extent as a body made every four-line package comment a finding.
     ///
-    /// Provided from the `body` field, which every pinned grammar names — the same convention
-    /// `bound_identifiers` relies on, and overridable for the same reason.
-    fn body_rows(&self, subject: Node, _src: &str) -> Option<usize> {
-        let body = subject.child_by_field_name("body")?;
-        Some(body.end_position().row - body.start_position().row + 1)
-    }
+    /// **Answered by the pack, not defaulted in the engine.** A default reading the `body` field
+    /// asked whether the grammar happens to name a field, which is not the same question: Go's
+    /// `type_declaration` names no fields at all yet a struct literal has a real extent, while
+    /// Rust's `enum_variant` does name one and a tuple variant's spans a single row. Every pack
+    /// answers this beside `statement_count`, which already locates the same node.
+    fn body_rows(&self, subject: Node, src: &str) -> Option<usize>;
 
     /// Concern 10 — what happens to the whitespace around a removed block.
     fn blank_line_policy(&self) -> BlankLinePolicy;

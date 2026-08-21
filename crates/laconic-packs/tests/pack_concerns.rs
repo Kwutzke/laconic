@@ -4,7 +4,10 @@
 //! that agreed with Go on everything would need no test at all.
 
 use laconic_engine::domain::{Attachment, CommentKind, Visibility};
-use laconic_engine::{Config, FileAnalysis, analyse, resolve};
+use laconic_engine::{
+    Config, FileAnalysis, Registry, Rules, all_block_rules, all_subject_rules, analyse, dispatch,
+    resolve,
+};
 use laconic_packs::all;
 use std::path::Path;
 
@@ -13,6 +16,21 @@ fn analyse_str(name: &str, src: &str) -> FileAnalysis {
     let path = Path::new(name);
     let (pack, grammar) = resolve(&packs, path).unwrap_or_else(|| panic!("no pack claims {name}"));
     analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable")
+}
+
+/// Every rule id the full set reports for one source, so a test can name the rule it expects and
+/// the ones it expects nothing from.
+fn rules_fired(name: &str, src: &str) -> Vec<&'static str> {
+    let packs = all();
+    let path = Path::new(name);
+    let (pack, grammar) = resolve(&packs, path).unwrap_or_else(|| panic!("no pack claims {name}"));
+    let analysis = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let rules = Rules {
+        block: all_block_rules(),
+        subject: all_subject_rules(),
+    };
+    let (findings, _) = dispatch(path, src, &analysis, &Registry::default(), &rules);
+    findings.into_iter().map(|f| f.rule).collect()
 }
 
 fn block_with<'a>(a: &'a FileAnalysis, needle: &str) -> &'a laconic_engine::CommentBlock {
@@ -72,6 +90,19 @@ fn a_python_docstring_documents_its_enclosing_scope() {
 
 /// And the docstring is discounted from the statement count, so the same shape counts the same in
 /// Python as anywhere else.
+/// A tuple variant and a newtype both name a `body` field spanning one row, so measuring against
+/// it put `docbloat`'s relative threshold at three lines — shorter than an ordinary doc comment.
+/// This is the half of the bodyless-declaration class that survived the first repair.
+#[test]
+fn a_one_row_body_is_not_a_denominator() {
+    let src = "pub enum Shape {\n    /// A circle.\n    ///\n    /// The radius unit is metres,\n    /// which callers get wrong.\n    Circle(f64),\n}\n\n/// A newtype.\n///\n/// The invariant is not visible\n/// from the type alone.\npub struct Metres(f64);\n";
+    assert!(
+        !rules_fired("x.rs", src).contains(&"docbloat"),
+        "got {:?}",
+        rules_fired("x.rs", src)
+    );
+}
+
 /// Java and TS/JS make a machine directive the same node kind as prose, so the pack's own
 /// doc-comment lookup must walk over one rather than answering with it. Answered with it, the
 /// marker test fails, the declaration reads as undocumented, and its javadoc or JSDoc drops to a

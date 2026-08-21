@@ -152,3 +152,8 @@ pub fn visibility_from_export(node: Node) -> Visibility {
         Visibility::Restricted("module".to_string())
     }
 }
+
+/// Rows a body node spans, for `docbloat` — pack concern 9's other half.
+pub fn rows_of(node: Node) -> usize {
+    node.end_position().row - node.start_position().row + 1
+}

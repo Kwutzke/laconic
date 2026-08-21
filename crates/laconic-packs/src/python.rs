@@ -12,7 +12,7 @@
 //!   ignore without becoming invalid, which is why this is the one pack answering concern 11 with a
 //!   heuristic — and the reversal condition on decision 23 turns on it being the only one.
 
-use crate::common::{count_statements, descendants_of_kind};
+use crate::common::{count_statements, descendants_of_kind, rows_of};
 use laconic_engine::domain::{CommentKind, DeclaredSymbol, Visibility};
 use laconic_engine::pack::{BlankLinePolicy, DocComment, Pack};
 use laconic_grammars::Grammar;
@@ -128,6 +128,12 @@ impl Pack for PythonPack {
         } else {
             total
         }
+    }
+
+    /// The module root is its own body for counting statements and is **not** one here: a module
+    /// docstring measured against the whole file is a ratio of the file to itself.
+    fn body_rows(&self, subject: Node, _src: &str) -> Option<usize> {
+        Some(rows_of(subject.child_by_field_name("body")?))
     }
 
     /// Indentation carries meaning here, so nothing is collapsed: removing a block leaves the

@@ -8,7 +8,9 @@
 //! costs `banner` its gate tier and its Delete fix on exactly the input the rule exists to catch.
 //! The grammar declines `////////`, `/**/` and `/*******/` on its own.
 
-use crate::common::{count_statements, declared_name, descendants_of_kind, strip_c_markers};
+use crate::common::{
+    count_statements, declared_name, descendants_of_kind, rows_of, strip_c_markers,
+};
 use laconic_engine::domain::{CommentKind, DeclaredSymbol, Visibility};
 use laconic_engine::pack::{BlankLinePolicy, DocComment, Pack};
 use laconic_grammars::Grammar;
@@ -163,6 +165,12 @@ impl Pack for RustPack {
             Some(body) => count_statements(body, NON_STATEMENTS),
             None => 0,
         }
+    }
+
+    /// A tuple variant and a newtype both name a `body` field spanning one row. The rule, not this
+    /// method, decides that one row is too few to be a ratio's denominator.
+    fn body_rows(&self, subject: Node, _src: &str) -> Option<usize> {
+        Some(rows_of(subject.child_by_field_name("body")?))
     }
 
     fn blank_line_policy(&self) -> BlankLinePolicy {

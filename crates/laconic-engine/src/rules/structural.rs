@@ -28,6 +28,9 @@ const MIN_CODE_NODES: usize = 3;
 /// a variable called x.
 const MIN_SYMBOL_LEN: usize = 3;
 
+/// Rows a body needs before `docbloat` measures a doc comment against it.
+const MIN_BODY_ROWS: usize = 2;
+
 pub struct Restate;
 
 impl BlockRule for Restate {
@@ -146,28 +149,32 @@ impl BlockRule for DocBloat {
         "docbloat"
     }
 
-    /// The relative test needs a body to be relative to. A declaration with none — a Go
-    /// `package_clause`, a struct field, a const — is measured by the absolute threshold alone;
-    /// treating its own extent as a body made every four-line package comment a finding.
+    /// The relative test needs a body with room in it. Below two rows it is not a ratio: a
+    /// one-row body puts the threshold at three lines, which is shorter than an ordinary doc
+    /// comment in every language, so a Go `package_clause`, a Rust tuple variant and a newtype
+    /// struct all reported "documenting 1 lines of code". Those subjects are measured by the
+    /// absolute threshold alone.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
         let subject = ctx.subject?;
         let lines = ctx.block.line_count();
+        let measurable = subject.body_rows.filter(|rows| *rows >= MIN_BODY_ROWS);
         let over_absolute = lines > 15;
-        let over_relative = subject
-            .body_rows
-            .is_some_and(|rows| lines > rows.saturating_mul(3));
+        let over_relative = measurable.is_some_and(|rows| lines > rows.saturating_mul(3));
         if !over_absolute && !over_relative {
             return None;
         }
-        let measured = match subject.body_rows {
-            Some(rows) => format!("{lines} lines documenting {rows} lines of code"),
-            None => format!("{lines} lines on a declaration with no body"),
-        };
         Some(RuleHit::new(
             ctx.block.span.clone(),
-            format!(
-                "shorten this doc comment: {measured} — keep what a caller needs and move the rest into the body"
-            ),
+            match measurable {
+                Some(rows) => format!(
+                    "shorten this doc comment: {lines} lines documenting {rows} lines of code — keep what a caller needs and move the rest into the body"
+                ),
+                // Reached only by the absolute threshold, and the subject may be a file root, so
+                // the sentence names neither a declaration nor a body to move text into.
+                None => format!(
+                    "shorten this doc comment: {lines} lines — keep what a caller needs in the summary and move the detail below it"
+                ),
+            },
         ))
     }
 }

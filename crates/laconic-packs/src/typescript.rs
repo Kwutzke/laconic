@@ -10,7 +10,7 @@
 
 use crate::common::{
     count_statements, declared_name, descendants_of_kind, is_exported_declaration, is_marker_doc,
-    preceding_comment, strip_c_markers, visibility_from_export,
+    preceding_comment, rows_of, strip_c_markers, visibility_from_export,
 };
 use laconic_engine::domain::{CommentKind, DeclaredSymbol, Visibility};
 use laconic_engine::pack::{BlankLinePolicy, DocComment, Pack};
@@ -156,6 +156,12 @@ impl Pack for TypeScriptPack {
             Some(body) if body.kind() == "statement_block" => count_statements(body, &[]),
             _ => 0,
         }
+    }
+
+    /// Unlike `statement_count`, every body kind counts — a `class_body` and an `interface_body`
+    /// have rows a doc comment can be measured against even though they hold no statements.
+    fn body_rows(&self, subject: Node, _src: &str) -> Option<usize> {
+        Some(rows_of(subject.child_by_field_name("body")?))
     }
 
     fn blank_line_policy(&self) -> BlankLinePolicy {
