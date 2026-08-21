@@ -156,11 +156,26 @@ pub fn dispatch(
                 .filter(|(i, b)| indexed.iter().any(|(j, _)| j == i) || b.subject == Some(si))
                 .find(|(_, b)| b.ignore.as_ref().is_some_and(|d| d.rule == entry.id))
                 .map(|(i, _)| i);
+            // A directive above an **undocumented** subject binds to no block at all: a run
+            // holding only a directive produces none, so it lands in `unbound_directives`. That is
+            // the commonest shape `density` fires on, because `Density::check` excludes Doc kind
+            // and counts body comments — so searching blocks alone left the reader looking at a
+            // finding they had suppressed, with nothing in the output saying why.
+            let subject_row = line_column(src, subject.span.start).0;
+            let unbound_cover = covering.is_none()
+                && analysis
+                    .unbound_directives
+                    .iter()
+                    .any(|d| d.rule == entry.id && d.start_row + 2 == subject_row);
             let ctx = SubjectContext { subject, blocks };
             if let Some(hit) = rule.check(&ctx) {
+                let mut finding = build(file, src, entry.id, disposition, hit);
+                // Recorded here rather than in reconcile, which matches a finding to its block's
+                // directive and has no block to match against for this one.
+                finding.suppressed = unbound_cover;
                 pending.push(Pending {
                     block: covering,
-                    finding: build(file, src, entry.id, disposition, hit),
+                    finding,
                 });
             }
         }
