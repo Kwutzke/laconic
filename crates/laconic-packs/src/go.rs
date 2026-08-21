@@ -140,9 +140,21 @@ impl Pack for GoPack {
     /// package-restricted it made `implInInterface`, which opens by requiring an exported subject,
     /// permanently silent on the package doc comment. That comment is the most widely published
     /// surface Go has, and an unexported name leaked into it is what decision 23 exists to catch.
+    ///
+    /// **Except `package main`**, which has no importers, so no caller can read its doc comment at
+    /// all. Read as exported it made the longest prose block in the file resolve ordinary English
+    /// against every unexported helper name — "the config file" against `config`.
     fn visibility(&self, subject: Node, src: &str) -> Visibility {
         if subject.kind() == "package_clause" {
-            return Visibility::Exported;
+            let mut cursor = subject.walk();
+            let name = subject
+                .named_children(&mut cursor)
+                .find(|n| n.kind() == "package_identifier")
+                .map(|n| &src[n.byte_range()]);
+            return match name {
+                Some("main") => Visibility::Private,
+                _ => Visibility::Exported,
+            };
         }
         match declared_name(subject, src) {
             Some(name) => go_visibility(name),
