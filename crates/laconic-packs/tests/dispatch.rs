@@ -6,7 +6,9 @@
 
 use laconic_engine::registry::{FixShape, Tier};
 use laconic_engine::rule::{BlockContext, BlockRule, RuleHit, SubjectContext, SubjectRule};
-use laconic_engine::{Config, FileAnalysis, Registry, Report, Rules, analyse, dispatch, resolve};
+use laconic_engine::{
+    Config, FileAnalysis, Registry, Report, Rules, analyse, dispatch, is_autofixable, resolve,
+};
 use laconic_packs::all;
 use std::path::Path;
 
@@ -305,4 +307,87 @@ fn a_disabled_rule_is_not_dispatched() {
     registry.set_enabled("narration", false).unwrap();
     let (findings, _) = dispatch(Path::new(name), NARRATION, &a, &registry, &narration_stub());
     assert!(findings.is_empty());
+}
+
+/// `is_autofixable` is the only gate on the destructive half of the tool, and its three conjuncts
+/// are three independent protections. Covered as a product rather than by sampling: drop the
+/// suppressed check and `fix` deletes a comment someone protected with a reasoned directive; drop
+/// the autofix check and it deletes `restate`, `detached`, `attribution` and `commentedOutCode`
+/// hits, each of which ships autofix-off for a stated false-positive reason.
+#[test]
+fn only_unsuppressed_delete_findings_from_autofix_rules_are_applicable() {
+    let registry = Registry::default();
+    let finding = |rule: &'static str, fix: FixShape, suppressed: bool| laconic_engine::Finding {
+        rule,
+        file: Path::new("x.go").to_path_buf(),
+        span: 0..1,
+        line: 1,
+        column: 1,
+        tier: Tier::Gate,
+        fix,
+        instruction: String::new(),
+        suppressed,
+    };
+
+    // The only combination `fix` may touch.
+    assert!(is_autofixable(
+        &registry,
+        &finding("narration", FixShape::Delete, false)
+    ));
+
+    // Each conjunct, removed one at a time.
+    assert!(
+        !is_autofixable(&registry, &finding("narration", FixShape::Delete, true)),
+        "a suppressed finding is never applied"
+    );
+    for rule in ["restate", "detached", "attribution", "commentedOutCode"] {
+        assert!(
+            !is_autofixable(&registry, &finding(rule, FixShape::Delete, false)),
+            "{rule} ships autofix off"
+        );
+    }
+    for shape in [FixShape::Rewrite, FixShape::None] {
+        assert!(
+            !is_autofixable(&registry, &finding("narration", shape, false)),
+            "only Delete is mechanically applicable"
+        );
+    }
+
+    // A rule that is not in the registry at all cannot be applied either.
+    assert!(!is_autofixable(
+        &registry,
+        &finding("nosuchrule", FixShape::Delete, false)
+    ));
+}
+
+/// A directive on a block inside the subject silences the subject's finding. Without this there is
+/// no way to quiet `density` short of disabling the rule in config, and §4 grants no exemption for
+/// the one per-subject rule.
+#[test]
+fn a_per_subject_finding_can_be_suppressed() {
+    let src = "package x\n\nfunc F() {\n\t// laconic:ignore density — the state machine needs it\n\t// one\n\tq := 1\n\t_ = q\n}\n";
+    let rules = Rules {
+        block: Vec::new(),
+        subject: vec![Box::new(EverySubject("density"))],
+    };
+    let report = report_for(src, rules);
+    let density: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|f| f.rule == "density")
+        .collect();
+    assert_eq!(density.len(), 1, "the rule ran");
+    assert!(density[0].suppressed, "and its finding is suppressed");
+}
+
+/// The column is a character column. Reporting bytes would put a finding after a multi-byte string
+/// several columns right of where any editor shows it, with nothing in the output saying so.
+#[test]
+fn the_column_counts_characters_not_bytes() {
+    let src = "package x\n\nfunc F() {\n\tq := \"日本語\" // changed to use a map\n\t_ = q\n}\n";
+    let report = report_for(src, narration_stub());
+    let f = report.active().next().expect("narration fired");
+    let line = src.lines().nth(f.line - 1).expect("the reported line");
+    let at: String = line.chars().skip(f.column - 1).take(2).collect();
+    assert_eq!(at, "//", "the column lands on the comment marker");
 }

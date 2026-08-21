@@ -4,7 +4,7 @@
 //! resolution and attachment. `commentedOutCode` is the exception in the group: its test is over
 //! the comment body's own nested parse, which does not depend on the surrounding tree at all.
 
-use crate::domain::Attachment;
+use crate::domain::{Attachment, CommentKind};
 use crate::pack::split_identifier;
 use crate::rule::{BlockContext, BlockRule, RuleHit, SubjectContext, SubjectRule};
 use crate::rules::matching::words;
@@ -39,7 +39,9 @@ impl BlockRule for Restate {
     /// binds. A comment naming the same identifiers while saying *why* is a subset by this test
     /// and is the most valuable comment in the file, which is why this rule ships autofix off.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
-        if ctx.block.attachment != Attachment::AttachedBelow {
+        // Below the code or beside it. A detached block attaches to nothing, so there is nothing
+        // for its tokens to be a subset of.
+        if ctx.block.attachment == Attachment::Detached {
             return None;
         }
         let bound = &ctx.block.attached_identifiers;
@@ -202,7 +204,17 @@ impl SubjectRule for Density {
     /// More than 8 comment lines **and** a comment-to-statement ratio above 0.5. Both thresholds
     /// are the specification's stated values with no measurement behind them.
     fn check(&self, ctx: &SubjectContext) -> Option<RuleHit> {
-        let comment_lines: usize = ctx.blocks.iter().map(|b| b.line_count()).sum();
+        // Doc kind is excluded, and the reason is not positional: `docbloat` is the rule that
+        // measures a doc comment against its subject, so counting one here would measure the same
+        // lines twice under two rules with two different instructions. In Python the docstring sits
+        // *inside* the scope it documents, so a filter keyed on position rather than kind would
+        // count it there and not elsewhere.
+        let comment_lines: usize = ctx
+            .blocks
+            .iter()
+            .filter(|b| b.kind != CommentKind::Doc)
+            .map(|b| b.line_count())
+            .sum();
         if comment_lines <= 8 {
             return None;
         }

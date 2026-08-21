@@ -46,7 +46,7 @@ const WARN_REWRITE: Disposition = Disposition {
 pub enum Dispatch {
     /// The twelve rules that take a comment block.
     PerBlock,
-    /// `density` alone: an aggregate over every block attached to one subject, so its finding
+    /// `density` alone: an aggregate over the blocks inside one subject's span, so its finding
     /// anchors to the subject rather than to a block.
     PerSubject,
     /// `ignoreReason` and `deadIgnore`. Both take surviving ignore directives as input, and

@@ -6,3 +6,8 @@ func f(r *record, userName string) {
 	// the user name
 	r.userName = userName
 }
+
+func g(counter int) int {
+	counter++ // counter
+	return counter
+}

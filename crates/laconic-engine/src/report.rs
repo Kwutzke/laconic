@@ -157,10 +157,16 @@ pub fn fix_str(f: FixShape) -> &'static str {
     }
 }
 
-/// 1-based line and column for a byte offset.
+/// 1-based line and **character** column for a byte offset.
+///
+/// Characters, not bytes: `x := "日本" // changed to use a map` would otherwise report the comment
+/// four columns right of where any editor puts it, with nothing in the output to say the units
+/// differ.
 pub fn line_column(src: &str, offset: usize) -> (usize, usize) {
-    let head = &src[..offset.min(src.len())];
+    let offset = offset.min(src.len());
+    let head = &src[..offset];
     let line = head.matches('\n').count() + 1;
-    let column = head.rfind('\n').map_or(offset, |i| offset - i - 1) + 1;
+    let line_start = head.rfind('\n').map_or(0, |i| i + 1);
+    let column = src[line_start..offset].chars().count() + 1;
     (line, column)
 }

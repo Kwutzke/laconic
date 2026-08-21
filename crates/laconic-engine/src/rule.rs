@@ -48,7 +48,12 @@ pub trait BlockRule: Send + Sync {
 
 pub struct SubjectContext<'a> {
     pub subject: &'a Subject,
-    /// Every block attached to this subject.
+    /// Every block **inside** this subject's span — not the blocks attached to it.
+    ///
+    /// The two differ and the difference is the point: a comment inside a function body attaches to
+    /// the statement below it, so grouping by attachment would give every statement its own
+    /// denominator and no function any comments at all. The subject's own doc comment is excluded
+    /// by `density` itself, since `docbloat` is the rule that measures that one.
     pub blocks: Vec<&'a CommentBlock>,
 }
 

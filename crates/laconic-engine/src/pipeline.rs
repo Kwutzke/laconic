@@ -178,11 +178,17 @@ pub fn analyse(
             None if attachment == Attachment::AttachedBelow => following.and_then(subject_index),
             None => None,
         };
+        // A trailing comment attaches to the code beside it, and `i++ // increment i` is the
+        // commonest restatement there is. Leaving this empty for trailing blocks exempted that
+        // whole shape from `restate` silently.
         let attached_identifiers = match attachment {
             Attachment::AttachedBelow => following
                 .map(|n| pack.bound_identifiers(n, src))
                 .unwrap_or_default(),
-            _ => Vec::new(),
+            Attachment::AttachedTrailing => preceding_code_node(root, comments[0].span.start)
+                .map(|n| pack.bound_identifiers(n, src))
+                .unwrap_or_default(),
+            Attachment::Detached => Vec::new(),
         };
 
         let span = comments[0].span.start..comments.last().unwrap().span.end;
@@ -334,6 +340,31 @@ fn bind_ignore_directives(
         }
     }
     unbound
+}
+
+/// The innermost node ending at or before `offset` on the same line — what a trailing comment sits
+/// beside.
+fn preceding_code_node(root: Node<'_>, offset: usize) -> Option<Node<'_>> {
+    let mut cursor = root.walk();
+    let mut stack = vec![root];
+    let mut best: Option<Node> = None;
+    while let Some(n) = stack.pop() {
+        for c in n.named_children(&mut cursor) {
+            if c.is_extra() {
+                continue;
+            }
+            if c.end_byte() <= offset {
+                let better = best.is_none_or(|b| {
+                    (c.end_byte(), c.start_byte()) > (b.end_byte(), b.start_byte())
+                });
+                if better {
+                    best = Some(c);
+                }
+            }
+            stack.push(c);
+        }
+    }
+    best
 }
 
 /// The outermost node that begins at or after `offset` and is not a comment.

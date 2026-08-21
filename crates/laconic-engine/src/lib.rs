@@ -14,7 +14,7 @@ pub mod report;
 pub mod rule;
 pub mod rules;
 
-pub use dispatch::{Rules, dispatch, gates, is_autofixable};
+pub use dispatch::{Rules, dispatch, is_autofixable};
 pub use domain::{
     Attachment, Comment, CommentBlock, CommentKind, DeclaredSymbol, IgnoreDirective, Subject,
     Visibility,

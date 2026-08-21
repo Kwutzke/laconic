@@ -7,7 +7,7 @@
 
 use crate::domain::CommentKind;
 use crate::pipeline::FileAnalysis;
-use crate::registry::{Disposition, ErrorPolicy, FixShape, Registry, Tier};
+use crate::registry::{Dispatch, Disposition, ErrorPolicy, FixShape, Registry};
 use crate::report::{Finding, WithheldNote, line_column};
 use crate::rule::{BlockContext, BlockRule, SubjectContext, SubjectRule};
 use std::collections::BTreeSet;
@@ -45,6 +45,19 @@ pub fn dispatch(
             let Some(entry) = registry.get(rule.id()).filter(|e| e.enabled) else {
                 continue;
             };
+            // The registry's `dispatch` decides where a rule runs. Without this the field is
+            // documentation: a rule placed in the wrong vec would be dispatched anyway, or never,
+            // and either way silently.
+            debug_assert_eq!(
+                entry.dispatch,
+                Dispatch::PerBlock,
+                "{} is registered for {:?} but was supplied as a block rule",
+                entry.id,
+                entry.dispatch
+            );
+            if entry.dispatch != Dispatch::PerBlock {
+                continue;
+            }
             let Some(disposition) = entry.disposition(block.kind) else {
                 continue;
             };
@@ -83,34 +96,57 @@ pub fn dispatch(
         let Some(entry) = registry.get(rule.id()).filter(|e| e.enabled) else {
             continue;
         };
+        debug_assert_eq!(
+            entry.dispatch,
+            Dispatch::PerSubject,
+            "{} is registered for {:?} but was supplied as a subject rule",
+            entry.id,
+            entry.dispatch
+        );
+        if entry.dispatch != Dispatch::PerSubject {
+            continue;
+        }
         for subject in analysis.subjects.iter() {
             // Blocks **inside** the subject's span, not blocks attached to it. `density` is per
             // function, and a comment inside a function body attaches to the statement below it —
             // so grouping by attachment would give every statement its own denominator and no
             // function any comments at all. The subject's own doc comment sits above its span and
             // is correctly excluded: `docbloat` measures that one.
-            let blocks: Vec<_> = analysis
+            let indexed: Vec<(usize, &crate::domain::CommentBlock)> = analysis
                 .blocks
                 .iter()
-                .filter(|b| b.span.start >= subject.span.start && b.span.end <= subject.span.end)
+                .enumerate()
+                .filter(|(_, b)| {
+                    b.span.start >= subject.span.start && b.span.end <= subject.span.end
+                })
                 .collect();
-            if blocks.is_empty() {
+            if indexed.is_empty() {
                 continue;
             }
-            let in_error = blocks.iter().any(|b| b.in_error_subtree);
+            let blocks: Vec<_> = indexed.iter().map(|(_, b)| *b).collect();
+            let in_error = indexed.iter().any(|(_, b)| b.in_error_subtree);
             if withhold(entry.error_policy, analysis.has_error_nodes, in_error) {
                 withheld.insert(entry.id);
                 continue;
             }
             // Its disposition is read from the kind of the blocks it aggregates; a subject has no
             // kind of its own.
-            let Some(disposition) = blocks.iter().find_map(|b| entry.disposition(b.kind)) else {
+            let Some(disposition) = indexed.iter().find_map(|(_, b)| entry.disposition(b.kind))
+            else {
                 continue;
             };
+            // A directive on any block inside the subject suppresses the subject's finding.
+            // §4 says a protected block is dispatched and its findings recorded as suppressed, with
+            // no exemption for the one per-subject rule — and without this there is no way to
+            // silence `density` short of disabling it in config.
+            let covering = indexed
+                .iter()
+                .find(|(_, b)| b.ignore.as_ref().is_some_and(|d| d.rule == entry.id))
+                .map(|(i, _)| *i);
             let ctx = SubjectContext { subject, blocks };
             if let Some(hit) = rule.check(&ctx) {
                 pending.push(Pending {
-                    block: None,
+                    block: covering,
                     finding: build(file, src, entry.id, disposition, hit),
                 });
             }
@@ -277,11 +313,4 @@ pub fn is_autofixable(registry: &Registry, finding: &Finding) -> bool {
     finding.fix == FixShape::Delete
         && !finding.suppressed
         && registry.get(finding.rule).is_some_and(|e| e.autofix)
-}
-
-/// Whether any finding gates. Kept beside dispatch so the tier's one consequence is stated once.
-pub fn gates(findings: &[Finding]) -> bool {
-    findings
-        .iter()
-        .any(|f| f.tier == Tier::Gate && !f.suppressed)
 }
