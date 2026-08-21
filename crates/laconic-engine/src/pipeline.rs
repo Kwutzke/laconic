@@ -28,6 +28,9 @@ pub struct FileAnalysis {
     /// `implInInterface` is suppressed for the whole file when this is set, because its input is
     /// file-scoped: a clean subtree says nothing about whether the enumeration is complete.
     pub has_error_nodes: bool,
+    /// The extensions the resolved pack claims — concern 1, which `fileref` needs to tell a source
+    /// path from an ordinary dotted word.
+    pub source_extensions: Vec<&'static str>,
 }
 
 /// Why a file produced no analysis. None of these is an error: laconic runs over whole
@@ -185,6 +188,7 @@ pub fn analyse(
         subjects,
         declared: pack.declared_symbols(root, src),
         has_error_nodes: has_error_nodes(root),
+        source_extensions: pack.extensions().iter().map(|(e, _)| *e).collect(),
     })
 }
 

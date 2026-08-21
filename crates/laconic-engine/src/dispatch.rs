@@ -62,6 +62,7 @@ pub fn dispatch(
                 block,
                 subject,
                 declared: &analysis.declared,
+                source_extensions: &analysis.source_extensions,
                 src,
             };
             if let Some(hit) = rule.check(&ctx) {

@@ -12,6 +12,7 @@ pub mod pipeline;
 pub mod registry;
 pub mod report;
 pub mod rule;
+pub mod rules;
 
 pub use dispatch::{Rules, dispatch, gates, is_autofixable};
 pub use domain::{
@@ -26,3 +27,4 @@ pub use report::{
     EXIT_CLEAN, EXIT_GATE, EXIT_USAGE, Finding, Report, UnreadableFile, WithheldNote,
 };
 pub use rule::{BlockContext, BlockRule, RuleHit, SubjectContext, SubjectRule};
+pub use rules::text_rules;
