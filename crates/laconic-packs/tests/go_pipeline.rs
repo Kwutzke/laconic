@@ -65,6 +65,17 @@ fn an_interface_method_comment_is_a_doc_comment() {
         .find(|b| b.body().contains("Read fills p"))
         .expect("the comment is extracted");
     assert_eq!(block.kind, CommentKind::Doc);
+
+    // An embedded interface element is the other half of `interface_type`, and was the half left
+    // out when `method_elem` was added.
+    let embedded = "package x\n\ntype ReadWriter interface {\n\t// Reader supplies the read half.\n\tReader\n}\n";
+    let b = analyse(pack, grammar, path, embedded, &Config::unrestricted()).expect("analysable");
+    let block = b
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("read half"))
+        .expect("the comment is extracted");
+    assert_eq!(block.kind, CommentKind::Doc);
 }
 
 /// Only `var_declaration` wraps its specs in a `var_spec_list`; `const` and `type` list theirs as
