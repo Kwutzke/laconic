@@ -281,16 +281,17 @@ impl BlockRule for FileRef {
     }
 }
 
+/// Whitespace-separated words. Punctuation around a word is the trimmer's job — splitting on it
+/// here as well was redundant, and mutation testing found the redundancy by changing it with no
+/// test noticing.
 fn words_with_punctuation(body: &str) -> Vec<&str> {
-    body.split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '"' || c == '\'')
-        .filter(|w| !w.is_empty())
-        .collect()
+    body.split_whitespace().collect()
 }
 
 fn looks_like_source_path(word: &str, extensions: &[&'static str]) -> bool {
-    // Trailing punctuation the word splitter leaves attached, plus the two it removes — trimming
-    // both means this function is right on its own rather than only in the caller's hands.
-    let candidate = word.trim_end_matches(['.', ')', ']', ':', ',', ';']);
+    // Every punctuation mark that can sit against a path in prose, on either side: quotes and
+    // brackets open as well as close.
+    let candidate = word.trim_matches(['.', '(', ')', '[', ']', ':', ',', ';', '"', '\'', '`']);
     let Some((stem, ext)) = candidate.rsplit_once('.') else {
         return false;
     };
@@ -367,6 +368,64 @@ mod tests {
         assert!(!looks_like_source_path("parser.go", &["rs"]));
         assert!(!looks_like_source_path("e.g.", &["go"]));
         assert!(!looks_like_source_path("config.json", &["go"]));
+    }
+
+    /// Every case below was found by `cargo mutants`: the line ran under the existing tests, but
+    /// no test would have noticed the behaviour changing. Coverage called all of it green.
+
+    /// The trim is what lets a decorated task marker reach `task` instead of `banner`. Without it
+    /// `-- TODO --` is a section label, and two rules report the same comment with two different
+    /// instructions.
+    #[test]
+    fn a_decorated_task_marker_is_not_a_section_label() {
+        assert!(banner_reason(" -- TODO --").is_none());
+        assert!(banner_reason(" == FIXME ==").is_none());
+        assert!(banner_reason(" -- HELPERS --").is_some());
+    }
+
+    /// Two letters is a label; one is not. The boundary is the whole content of the rule.
+    #[test]
+    fn a_two_letter_label_is_the_shortest_one() {
+        assert!(is_section_label("OK"));
+        assert!(!is_section_label("X"));
+    }
+
+    /// `etc` must be a word, not a suffix. Without the boundary check any word ending in those
+    /// three letters trips the rule.
+    #[test]
+    fn etc_must_be_its_own_word() {
+        assert!(ends_with_etc(" ints, floats, etc."));
+        assert!(
+            !ends_with_etc(" the netc"),
+            "must end the sentence as its own word"
+        );
+        assert!(!ends_with_etc(" returns the netc value"));
+        assert!(!ends_with_etc(" the codec"));
+    }
+
+    /// A marker inside an identifier is not a marker. `_TODO` is a name, and firing on it would
+    /// ask the reader to add an issue reference to a variable.
+    #[test]
+    fn an_underscore_prefixed_marker_is_an_identifier() {
+        assert!(!task_without_reference("_TODO is the field name", "TODO"));
+        assert!(task_without_reference("TODO is the field name", "TODO"));
+    }
+
+    /// `fileref` splits on punctuation as well as whitespace. Without it a path followed by a
+    /// comma is part of a longer token and no path is ever found.
+    #[test]
+    fn a_path_followed_by_punctuation_is_still_a_path() {
+        for body in [
+            " see parser.go, then lexer.go",
+            " see parser.go; then lexer.go",
+            " see \"parser.go\" for the shape",
+            " see 'parser.go' for the shape",
+        ] {
+            let found = words_with_punctuation(body)
+                .into_iter()
+                .find(|w| looks_like_source_path(w, &["go"]));
+            assert!(found.is_some(), "no path found in {body:?}");
+        }
     }
 
     #[test]

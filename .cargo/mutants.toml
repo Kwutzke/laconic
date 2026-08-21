@@ -1,0 +1,10 @@
+# Mutation testing config.
+#
+# `test_workspace` is the load-bearing line. Without it cargo-mutants runs only the tests in the
+# package it mutated, and this workspace splits the two: the rules live in `laconic-engine` while
+# almost every test that exercises them lives in `laconic-packs`. Scoped that way, deleting the
+# entire rule set survives — 38 of 84 mutants "missed" purely because the fixture suite never ran.
+test_workspace = true
+
+# Grammar fixtures and generated parser sources carry no logic worth mutating.
+exclude_globs = ["crates/laconic-grammars/probe/**", "**/testdata/**"]

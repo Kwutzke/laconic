@@ -3,3 +3,7 @@
 
 # cargo build output
 /target/
+
+# cargo-mutants scratch trees
+/mutants.out/
+/mutants.out.old/

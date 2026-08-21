@@ -102,10 +102,16 @@ pub fn analyse(
     let all: Vec<(Node, Comment)> = sources
         .into_iter()
         .map(|node| {
+            // The node's own `end_position` is not the comment's last line of text.
+            // tree-sitter-rust's `doc_comment` child carries the trailing newline, so a one-line
+            // `///` comment reports an end row one past itself — and every Rust doc comment then
+            // resolves as Detached instead of attached to the item directly below it.
+            let text = &src[node.byte_range()];
+            let start_row = node.start_position().row;
             let comment = Comment {
                 span: node.byte_range(),
-                start_row: node.start_position().row,
-                end_row: node.end_position().row,
+                start_row,
+                end_row: start_row + text.trim_end().matches('\n').count(),
                 trailing: has_code_before(src, node.start_byte()),
                 body: pack.comment_body(node, src),
             };
