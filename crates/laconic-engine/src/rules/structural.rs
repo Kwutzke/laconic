@@ -145,19 +145,27 @@ impl BlockRule for DocBloat {
         "docbloat"
     }
 
+    /// The relative test needs a body to be relative to. A declaration with none — a Go
+    /// `package_clause`, a struct field, a const — is measured by the absolute threshold alone;
+    /// treating its own extent as a body made every four-line package comment a finding.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
         let subject = ctx.subject?;
         let lines = ctx.block.line_count();
         let over_absolute = lines > 15;
-        let over_relative = lines > subject.body_rows.saturating_mul(3);
+        let over_relative = subject
+            .body_rows
+            .is_some_and(|rows| lines > rows.saturating_mul(3));
         if !over_absolute && !over_relative {
             return None;
         }
+        let measured = match subject.body_rows {
+            Some(rows) => format!("{lines} lines documenting {rows} lines of code"),
+            None => format!("{lines} lines on a declaration with no body"),
+        };
         Some(RuleHit::new(
             ctx.block.span.clone(),
             format!(
-                "shorten this doc comment: {lines} lines documenting {} lines of code — keep what a caller needs and move the rest into the body",
-                subject.body_rows
+                "shorten this doc comment: {measured} — keep what a caller needs and move the rest into the body"
             ),
         ))
     }

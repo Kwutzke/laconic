@@ -191,9 +191,11 @@ pub fn analyse(
             Attachment::AttachedBelow => following
                 .map(|n| pack.bound_identifiers(n, src))
                 .unwrap_or_default(),
-            Attachment::AttachedTrailing => preceding_code_node(root, comments[0].span.start)
-                .map(|n| pack.bound_identifiers(n, src))
-                .unwrap_or_default(),
+            Attachment::AttachedTrailing => {
+                preceding_code_node(root, comments[0].span.start, comments[0].start_row)
+                    .map(|n| pack.bound_identifiers(n, src))
+                    .unwrap_or_default()
+            }
             Attachment::Detached => Vec::new(),
         };
 
@@ -348,9 +350,17 @@ fn bind_ignore_directives(
     unbound
 }
 
-/// The innermost node ending at or before `offset` on the same line — what a trailing comment sits
-/// beside.
-fn preceding_code_node(root: Node<'_>, offset: usize) -> Option<Node<'_>> {
+/// The **outermost** node ending closest before `offset` and ending on `row` — what a trailing
+/// comment sits beside.
+///
+/// Outermost, not innermost, and that is the whole rule for `total := 0 // total`: the innermost
+/// node ending at the offset is the literal `0`, which binds nothing, so `restate` could not fire
+/// on the commonest trailing restatement there is. The enclosing assignment binds `total`.
+///
+/// The row bound is enforced rather than implied. A trailing block has code before it on its own
+/// line by definition, so the nearest preceding node is on that line anyway — but a walk that
+/// states a line bound and applies none is a claim no test is holding up.
+fn preceding_code_node(root: Node<'_>, offset: usize, row: usize) -> Option<Node<'_>> {
     let mut cursor = root.walk();
     let mut stack = vec![root];
     let mut best: Option<Node> = None;
@@ -359,9 +369,12 @@ fn preceding_code_node(root: Node<'_>, offset: usize) -> Option<Node<'_>> {
             if c.is_extra() {
                 continue;
             }
-            if c.end_byte() <= offset {
+            if c.end_byte() <= offset && c.end_position().row == row {
+                // Ties on `end_byte` go to the node that starts earliest — the outermost of the
+                // nodes ending together.
                 let better = best.is_none_or(|b| {
-                    (c.end_byte(), c.start_byte()) > (b.end_byte(), b.start_byte())
+                    (c.end_byte(), std::cmp::Reverse(c.start_byte()))
+                        > (b.end_byte(), std::cmp::Reverse(b.start_byte()))
                 });
                 if better {
                     best = Some(c);
@@ -403,7 +416,7 @@ fn build_subject(pack: &dyn Pack, node: Node, src: &str) -> Subject {
     Subject {
         span: node.byte_range(),
         bound_identifiers: pack.bound_identifiers(node, src),
-        body_rows: node.end_position().row - node.start_position().row + 1,
+        body_rows: pack.body_rows(node, src),
         statement_count: pack.statement_count(node, src),
         visibility: pack.visibility(node, src),
     }

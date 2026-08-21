@@ -128,7 +128,21 @@ impl Pack for RustPack {
 
     /// Concern 8. `visibility_modifier` read as **text**, not as presence: `pub`, `pub(crate)` and
     /// `pub(self)` are one node kind and three different answers, and `pub(self)` is private.
+    /// An `enum_variant` has no visibility of its own: Rust forbids `pub` on a variant because a
+    /// variant inherits its enum's. Reading the absent modifier as `Private` made every variant of
+    /// every public enum a private symbol, so `implInInterface` fired on the words a doc comment
+    /// uses to name them — `Line`, `Block`, `Doc`.
     fn visibility(&self, subject: Node, src: &str) -> Visibility {
+        if subject.kind() == "enum_variant" {
+            let mut ancestor = subject.parent();
+            while let Some(node) = ancestor {
+                if node.kind() == "enum_item" {
+                    return self.visibility(node, src);
+                }
+                ancestor = node.parent();
+            }
+            return Visibility::Private;
+        }
         let mut cursor = subject.walk();
         let modifier = subject
             .named_children(&mut cursor)

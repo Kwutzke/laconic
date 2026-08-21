@@ -146,6 +146,30 @@ fn rust_visibility_reads_the_modifier_text() {
     assert_eq!(vis("d"), Visibility::Private);
 }
 
+/// A variant inherits its enum's visibility, because Rust forbids `pub` on one. Read as an absent
+/// modifier it was Private, and `implInInterface` then fired on any public doc comment using the
+/// words a public enum's variants are named after — sixteen findings on this repository's own
+/// source, every one a false positive.
+#[test]
+fn rust_enum_variants_inherit_the_enums_visibility() {
+    let src = "pub enum Kind {\n    Line,\n    Block,\n}\n\nenum Hidden {\n    Inner,\n}\n";
+    let a = analyse_str("x.rs", src);
+    let vis = |n: &str| {
+        a.declared
+            .iter()
+            .find(|d| d.name == n)
+            .map(|d| d.visibility.clone())
+            .unwrap_or_else(|| panic!("{n} not declared"))
+    };
+    assert_eq!(vis("Line"), Visibility::Exported);
+    assert_eq!(vis("Block"), Visibility::Exported);
+    assert_eq!(
+        vis("Inner"),
+        Visibility::Private,
+        "a variant of a private enum stays private"
+    );
+}
+
 /// A Rust doc comment is attached to the item below it. The grammar's `doc` child carries the
 /// trailing newline, so the comment node's own end row is one past its text — read directly, every
 /// Rust doc comment resolves as Detached.

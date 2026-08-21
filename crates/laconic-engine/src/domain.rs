@@ -72,8 +72,8 @@ pub struct Subject {
     pub span: Range<usize>,
     /// The identifiers this subject binds, already split on camelCase and snake_case — `restate`.
     pub bound_identifiers: Vec<String>,
-    /// Rows the subject's body spans — `docbloat`.
-    pub body_rows: usize,
+    /// Rows the subject's body spans — `docbloat`. `None` when the subject has no body.
+    pub body_rows: Option<usize>,
     /// Statements in the subject's body — `density`'s denominator.
     pub statement_count: usize,
     pub visibility: Visibility,

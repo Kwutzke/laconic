@@ -82,6 +82,19 @@ pub trait Pack {
     /// Concern 9 — statements in a subject's body, for `density`'s ratio.
     fn statement_count(&self, subject: Node, src: &str) -> usize;
 
+    /// Concern 9's other half — the rows that body spans, for `docbloat`'s relative test.
+    ///
+    /// `None` when the subject has no body: a Go `package_clause`, a struct field, a const. There
+    /// is nothing to measure a doc comment against, and treating the declaration's own extent as a
+    /// body makes every four-line package comment a finding.
+    ///
+    /// Provided from the `body` field, which every pinned grammar names — the same convention
+    /// `bound_identifiers` relies on, and overridable for the same reason.
+    fn body_rows(&self, subject: Node, _src: &str) -> Option<usize> {
+        let body = subject.child_by_field_name("body")?;
+        Some(body.end_position().row - body.start_position().row + 1)
+    }
+
     /// Concern 10 — what happens to the whitespace around a removed block.
     fn blank_line_policy(&self) -> BlankLinePolicy;
 
