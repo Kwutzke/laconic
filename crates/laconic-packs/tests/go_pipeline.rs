@@ -27,6 +27,24 @@ fn block_starting(a: &FileAnalysis, prefix: &str) -> usize {
         .unwrap_or_else(|| panic!("no block starting {prefix:?}; got {:?}", bodies(a)))
 }
 
+/// An interface method is a `method_elem`, not a `field_declaration`. Missing from the documentable
+/// set, the comment above an exported interface method is Line kind — a Delete fix at gate tier
+/// with autofix **on**, so `laconic fix` deletes the godoc of a published API.
+#[test]
+fn an_interface_method_comment_is_a_doc_comment() {
+    let src = "package x\n\ntype Reader interface {\n\t// Read fills p.\n\tRead(p []byte) (int, error)\n}\n";
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let block = a
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("Read fills p"))
+        .expect("the comment is extracted");
+    assert_eq!(block.kind, CommentKind::Doc);
+}
+
 /// Concern 1 — resolution is per extension. A file no pack claims is skipped silently, because
 /// laconic runs over whole repositories and warning on every `.json` makes the output unusable.
 #[test]

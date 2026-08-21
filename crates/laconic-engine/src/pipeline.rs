@@ -139,6 +139,14 @@ pub fn analyse(
         // neither changes which comments are one block. A directive left in the block would join
         // its text to what `narration` and `restate` match against, so a suppression would alter
         // the finding it suppresses.
+        //
+        // **Adjacency is measured over the whole run, not over what survives it.** A directive at
+        // the tail — `//nolint:gosec` on the line above the code it exempts — otherwise leaves the
+        // last surviving comment two rows above the code, and `detached` fires at gate tier on a
+        // block that plainly documents the line below it.
+        let last_in_run = run.last().copied().expect("a run is never empty");
+        let run_end_byte = all[last_in_run].0.end_byte();
+        let run_end_row = all[last_in_run].1.end_row;
         let mut nodes: Vec<Node> = Vec::new();
         let mut comments: Vec<Comment> = Vec::new();
         for i in run {
@@ -166,15 +174,12 @@ pub fn analyse(
             None => pack.comment_kind(nodes[0], src),
         };
 
-        let last = *nodes.last().expect("a run is never empty");
-        let following = next_code_node(root, last.end_byte());
+        let following = next_code_node(root, run_end_byte);
         let attachment = if comments[0].trailing {
             Attachment::AttachedTrailing
         } else {
             match following {
-                Some(n) if n.start_position().row == comments.last().unwrap().end_row + 1 => {
-                    Attachment::AttachedBelow
-                }
+                Some(n) if n.start_position().row == run_end_row + 1 => Attachment::AttachedBelow,
                 _ => Attachment::Detached,
             }
         };
