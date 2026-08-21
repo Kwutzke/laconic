@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/laconic-grammars"]
+members = ["crates/laconic-grammars", "crates/laconic-engine", "crates/laconic-packs"]
 
 [workspace.package]
 edition = "2024"
@@ -8,6 +8,8 @@ rust-version = "1.85"
 license = "MIT"
 
 [workspace.dependencies]
+laconic-grammars = { path = "crates/laconic-grammars" }
+laconic-engine = { path = "crates/laconic-engine" }
 tree-sitter = "=0.26.12"
 tree-sitter-go = "=0.25.0"
 tree-sitter-python = "=0.25.0"
