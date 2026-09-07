@@ -28,13 +28,8 @@ const MIN_CODE_NODES: usize = 3;
 /// a variable called x.
 const MIN_SYMBOL_LEN: usize = 3;
 
-/// `docbloat`'s cap, applied whatever the subject declares.
-///
-/// Six is the repository owner's ruling against the corpus, replacing the specification's stated 15
-/// — a number with no measurement behind it that missed a nine-line policy essay above a slice
-/// literal. The escape is charter constraint 5: a comment that genuinely earns more carries
-/// `laconic:ignore docbloat — <reason>`, which converts "what length is always wrong" into "what
-/// length should require someone to say why".
+/// `docbloat`'s cap, applied whatever the subject declares. Six is the owner's ruling against the
+/// corpus; the specified 15 had no measurement behind it. Charter constraint 5 is the escape.
 const ABSOLUTE_DOC_LINES: usize = 6;
 
 /// `docbloat`'s ratio, and `density`'s below it. Both carried over from the row-based tests they

@@ -552,13 +552,8 @@ fn a_one_method_interface_is_a_denominator() {
     );
 }
 
-/// `density` was structurally blind to interfaces: `statement_count` read a `body` field that a
-/// `type_declaration` does not name, returned 0, and the divide-by-zero guard exempted every
-/// interface in every codebase from the one rule built to catch over-commenting.
-///
-/// The commentary here is detached rather than doc — a comment directly above a `method_elem` is
-/// that method's godoc, and `density` excludes Doc kind on purpose, because `docbloat` is the rule
-/// that measures a doc comment against its subject.
+/// `density` was structurally blind to interfaces: the divide-by-zero guard exempted every one.
+/// The commentary is detached rather than doc because `density` excludes Doc kind on purpose.
 #[test]
 fn density_reaches_an_interface() {
     let src = "package x\n\ntype Store interface {\n\t// The two halves below are ordered by how\n\t// often they are called rather than by name,\n\t// which is a convention this package keeps\n\t// and no other package in the tree does.\n\t// A reader coming from elsewhere will look\n\t// for alphabetical order and not find it.\n\t// The ordering is load-bearing for the\n\t// generated mock, which emits in source\n\t// order and is diffed in review.\n\n\tGet(k string) error\n\tPut(k string) error\n}\n";

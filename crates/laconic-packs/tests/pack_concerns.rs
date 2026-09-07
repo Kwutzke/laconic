@@ -88,13 +88,9 @@ fn a_python_docstring_documents_its_enclosing_scope() {
     assert!(subject.span.start <= doc.span.start && doc.span.end <= subject.span.end);
 }
 
-/// A tuple variant and a newtype each declare **one member**, so four lines of prose above one is
-/// the shape `docbloat` exists to catch — the same shape as a five-line comment on a one-method
-/// interface.
-///
-/// This reverses `MIN_BODY_ROWS`, which exempted both while the denominator was rows: a one-row
-/// body put the relative threshold at three lines, shorter than an ordinary doc comment, so the
-/// guard was suppressing a whole class to hide a proxy's failure.
+/// A tuple variant and a newtype each declare one member, so four lines of prose above one is the
+/// shape `docbloat` catches. Reverses `MIN_BODY_ROWS`, which hid the class while rows were the
+/// denominator.
 #[test]
 fn one_member_is_a_denominator() {
     let src = "pub enum Shape {\n    /// A circle.\n    ///\n    /// The radius unit is metres,\n    /// which callers get wrong.\n    Circle(f64),\n}\n\n/// A newtype.\n///\n/// The invariant is not visible\n/// from the type alone.\npub struct Metres(f64);\n";
