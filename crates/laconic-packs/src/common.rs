@@ -110,8 +110,12 @@ pub fn preceding_comment<'t>(
     None
 }
 
-/// Statements in a body node, excluding comments and any node kind that is not a statement.
-pub fn count_statements(body: Node, skip: &[&str]) -> usize {
+/// The members a body node declares, excluding comments and any node kind that is not one.
+///
+/// One walk serves every container the packs count — a `block` of statements, a `class_body` of
+/// members, an `enum_variant_list` of variants — because in every pinned grammar the members are
+/// the container's named children.
+pub fn count_members(body: Node, skip: &[&str]) -> usize {
     let mut cursor = body.walk();
     body.named_children(&mut cursor)
         .filter(|n| !n.is_extra() && !skip.contains(&n.kind()))
@@ -151,9 +155,4 @@ pub fn visibility_from_export(node: Node) -> Visibility {
     } else {
         Visibility::Restricted("module".to_string())
     }
-}
-
-/// Rows a body node spans, for `docbloat` — pack concern 9's other half.
-pub fn rows_of(node: Node) -> usize {
-    node.end_position().row - node.start_position().row + 1
 }

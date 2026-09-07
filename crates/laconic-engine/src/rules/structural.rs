@@ -28,8 +28,19 @@ const MIN_CODE_NODES: usize = 3;
 /// a variable called x.
 const MIN_SYMBOL_LEN: usize = 3;
 
-/// Rows a body needs before `docbloat` measures a doc comment against it.
-const MIN_BODY_ROWS: usize = 2;
+/// `docbloat`'s cap, applied whatever the subject declares. The specification's stated number with
+/// no measurement behind it; AC7 settles whether it drops. That it is *unconditional* is a design
+/// decision and does not wait for a corpus run.
+const ABSOLUTE_DOC_LINES: usize = 15;
+
+/// `docbloat`'s ratio, and `density`'s below it. Both carried over from the row-based tests they
+/// replaced — the denominator changed, the multipliers are still AC7's to calibrate.
+const DOC_LINES_PER_MEMBER: usize = 3;
+
+/// `density` measures non-doc commentary, so it needs both a floor and a ratio: eight lines of
+/// running commentary is unremarkable in a long function and damning in a short one.
+const DENSITY_MIN_COMMENT_LINES: usize = 8;
+const DENSITY_MAX_RATIO: f64 = 0.5;
 
 pub struct Restate;
 
@@ -149,33 +160,40 @@ impl BlockRule for DocBloat {
         "docbloat"
     }
 
-    /// The relative test needs a body with room in it. Below two rows it is not a ratio: a
-    /// one-row body puts the threshold at three lines, which is shorter than an ordinary doc
-    /// comment in every language, so a Go `package_clause`, a Rust tuple variant and a newtype
-    /// struct all reported "documenting 1 lines of code". Those subjects are measured by the
-    /// absolute threshold alone.
+    /// Two tests that catch different failures, neither subsuming the other. **The cap is
+    /// unconditional** — it applies whether or not the subject declares members, and nothing earns
+    /// twenty lines in healthy code. The ratio is what reaches below it, to the five-line comment
+    /// on a one-member interface that no defensible cap would catch.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
         let subject = ctx.subject?;
         let lines = ctx.block.line_count();
-        let measurable = subject.body_rows.filter(|rows| *rows >= MIN_BODY_ROWS);
-        let over_absolute = lines > 15;
-        let over_relative = measurable.is_some_and(|rows| lines > rows.saturating_mul(3));
+        let members = subject.member_count;
+        let over_absolute = lines > ABSOLUTE_DOC_LINES;
+        let over_relative = members > 0 && lines > members.saturating_mul(DOC_LINES_PER_MEMBER);
         if !over_absolute && !over_relative {
             return None;
         }
         Some(RuleHit::new(
             ctx.block.span.clone(),
-            match measurable {
-                Some(rows) => format!(
-                    "shorten this doc comment: {lines} lines documenting {rows} lines of code — keep what a caller needs and move the rest into the body"
-                ),
-                // Reached only by the absolute threshold, and the subject may be a file root, so
-                // the sentence names neither a declaration nor a body to move text into.
-                None => format!(
+            match members {
+                0 => format!(
                     "shorten this doc comment: {lines} lines — keep what a caller needs in the summary and move the detail below it"
+                ),
+                _ => format!(
+                    "shorten this doc comment: {lines} lines documenting {} — keep what a caller needs and move the rest into the body",
+                    members_phrase(members)
                 ),
             },
         ))
+    }
+}
+
+/// The consumer is an agent acting on the sentence, and "documenting 1 members" reads as a
+/// generated string rather than a claim about its code.
+fn members_phrase(members: usize) -> String {
+    match members {
+        1 => "1 member".to_string(),
+        n => format!("{n} members"),
     }
 }
 
@@ -217,7 +235,7 @@ impl SubjectRule for Density {
         "density"
     }
 
-    /// More than 8 comment lines **and** a comment-to-statement ratio above 0.5. Both thresholds
+    /// More than eight comment lines **and** a comment-to-member ratio above 0.5. Both thresholds
     /// are the specification's stated values with no measurement behind them.
     fn check(&self, ctx: &SubjectContext) -> Option<RuleHit> {
         // Doc kind is excluded, and the reason is not positional: `docbloat` is the rule that
@@ -231,21 +249,24 @@ impl SubjectRule for Density {
             .filter(|b| b.kind != CommentKind::Doc)
             .map(|b| b.line_count())
             .sum();
-        if comment_lines <= 8 {
+        if comment_lines <= DENSITY_MIN_COMMENT_LINES {
             return None;
         }
-        let statements = ctx.subject.statement_count;
-        if statements == 0 {
+        // A subject declaring no members has no denominator, and this rule is the ratio: unlike
+        // `docbloat` it carries no absolute test to fall back on.
+        let members = ctx.subject.member_count;
+        if members == 0 {
             return None;
         }
-        let ratio = comment_lines as f64 / statements as f64;
-        if ratio <= 0.5 {
+        let ratio = comment_lines as f64 / members as f64;
+        if ratio <= DENSITY_MAX_RATIO {
             return None;
         }
         Some(RuleHit::new(
             ctx.subject.span.clone(),
             format!(
-                "reduce the commentary here: {comment_lines} comment lines against {statements} statements — keep the ones a reader could not derive and delete the rest"
+                "reduce the commentary here: {comment_lines} comment lines against {} — keep the ones a reader could not derive and delete the rest",
+                members_phrase(members)
             ),
         ))
     }

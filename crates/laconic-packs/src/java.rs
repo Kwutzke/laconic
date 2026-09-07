@@ -5,8 +5,8 @@
 //! comments** — they never reach a rule and need no carve-out.
 
 use crate::common::{
-    count_statements, declared_name, descendants_of_kind, is_marker_doc, preceding_comment,
-    rows_of, strip_c_markers,
+    count_members, declared_name, descendants_of_kind, is_marker_doc, preceding_comment,
+    strip_c_markers,
 };
 use laconic_engine::domain::{CommentKind, DeclaredSymbol, Visibility};
 use laconic_engine::pack::{BlankLinePolicy, DocComment, Pack};
@@ -116,15 +116,14 @@ impl Pack for JavaPack {
         Visibility::Restricted("package".to_string())
     }
 
-    fn statement_count(&self, subject: Node, _src: &str) -> usize {
+    /// Concern 9. A method's `block` holds statements and a `class_body`, `interface_body` or
+    /// `enum_body` holds members; both are the `body` field's named children. A
+    /// `field_declaration` names no body and declares none.
+    fn member_count(&self, subject: Node, _src: &str) -> usize {
         match subject.child_by_field_name("body") {
-            Some(body) => count_statements(body, &[]),
+            Some(body) => count_members(body, &[]),
             None => 0,
         }
-    }
-
-    fn body_rows(&self, subject: Node, _src: &str) -> Option<usize> {
-        Some(rows_of(subject.child_by_field_name("body")?))
     }
 
     fn blank_line_policy(&self) -> BlankLinePolicy {

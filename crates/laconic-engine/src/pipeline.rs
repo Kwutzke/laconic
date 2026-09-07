@@ -436,8 +436,7 @@ fn build_subject(pack: &dyn Pack, node: Node, src: &str) -> Subject {
     Subject {
         span: node.byte_range(),
         bound_identifiers: pack.bound_identifiers(node, src),
-        body_rows: pack.body_rows(node, src),
-        statement_count: pack.statement_count(node, src),
+        member_count: pack.member_count(node, src),
         visibility: pack.visibility(node, src),
     }
 }

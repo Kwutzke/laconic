@@ -12,7 +12,7 @@
 //!   ignore without becoming invalid, which is why this is the one pack answering concern 11 with a
 //!   heuristic — and the reversal condition on decision 23 turns on it being the only one.
 
-use crate::common::{count_statements, descendants_of_kind, rows_of};
+use crate::common::{count_members, descendants_of_kind};
 use laconic_engine::domain::{CommentKind, DeclaredSymbol, Visibility};
 use laconic_engine::pack::{BlankLinePolicy, DocComment, Pack};
 use laconic_grammars::Grammar;
@@ -116,24 +116,20 @@ impl Pack for PythonPack {
     /// rather than an `extra`, so filtering comments does not remove it here as it does everywhere
     /// else. Left in, the same function shape counts one higher in Python than in any other
     /// language and `density` is systematically harder to trip.
-    fn statement_count(&self, subject: Node, _src: &str) -> usize {
+    fn member_count(&self, subject: Node, _src: &str) -> usize {
         let body = match subject.child_by_field_name("body") {
             Some(body) => body,
-            // The module root is its own body.
+            // The module root is its own body. Its members are the file's top-level statements —
+            // a real denominator, unlike the row span this replaced, which measured a module
+            // docstring against the file containing it.
             None => subject,
         };
-        let total = count_statements(body, &[]);
+        let total = count_members(body, &[]);
         if docstring_of(body).is_some() {
             total.saturating_sub(1)
         } else {
             total
         }
-    }
-
-    /// The module root is its own body for counting statements and is **not** one here: a module
-    /// docstring measured against the whole file is a ratio of the file to itself.
-    fn body_rows(&self, subject: Node, _src: &str) -> Option<usize> {
-        Some(rows_of(subject.child_by_field_name("body")?))
     }
 
     /// Indentation carries meaning here, so nothing is collapsed: removing a block leaves the

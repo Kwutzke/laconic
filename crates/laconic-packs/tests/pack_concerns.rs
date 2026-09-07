@@ -88,15 +88,23 @@ fn a_python_docstring_documents_its_enclosing_scope() {
     assert!(subject.span.start <= doc.span.start && doc.span.end <= subject.span.end);
 }
 
-/// A tuple variant and a newtype both name a `body` field spanning one row, so measuring against
-/// it put `docbloat`'s relative threshold at three lines — shorter than an ordinary doc comment.
-/// This is the half of the bodyless-declaration class that survived the first repair.
+/// A tuple variant and a newtype each declare **one member**, so four lines of prose above one is
+/// the shape `docbloat` exists to catch — the same shape as a five-line comment on a one-method
+/// interface.
+///
+/// This reverses `MIN_BODY_ROWS`, which exempted both while the denominator was rows: a one-row
+/// body put the relative threshold at three lines, shorter than an ordinary doc comment, so the
+/// guard was suppressing a whole class to hide a proxy's failure.
 #[test]
-fn a_one_row_body_is_not_a_denominator() {
+fn one_member_is_a_denominator() {
     let src = "pub enum Shape {\n    /// A circle.\n    ///\n    /// The radius unit is metres,\n    /// which callers get wrong.\n    Circle(f64),\n}\n\n/// A newtype.\n///\n/// The invariant is not visible\n/// from the type alone.\npub struct Metres(f64);\n";
-    assert!(
-        !rules_fired("x.rs", src).contains(&"docbloat"),
-        "got {:?}",
+    assert_eq!(
+        rules_fired("x.rs", src)
+            .iter()
+            .filter(|r| **r == "docbloat")
+            .count(),
+        2,
+        "the variant and the newtype both fire; got {:?}",
         rules_fired("x.rs", src)
     );
 }
@@ -130,7 +138,7 @@ fn a_rust_attribute_is_not_a_statement() {
         analyse_str("x.rs", src)
             .subjects
             .iter()
-            .map(|s| s.statement_count)
+            .map(|s| s.member_count)
             .max()
             .unwrap_or(0)
     };
@@ -149,8 +157,8 @@ fn a_python_docstring_is_not_a_statement() {
     let count = |a: &FileAnalysis| {
         a.subjects
             .iter()
-            .filter(|s| s.statement_count > 0)
-            .map(|s| s.statement_count)
+            .filter(|s| s.member_count > 0)
+            .map(|s| s.member_count)
             .max()
             .unwrap_or(0)
     };

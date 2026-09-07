@@ -1,9 +1,26 @@
 //! The engine's per-file pipeline, driven by the Go pack.
 
 use laconic_engine::domain::{Attachment, CommentKind, Visibility};
-use laconic_engine::{Config, FileAnalysis, Skipped, analyse, resolve};
+use laconic_engine::{
+    Config, FileAnalysis, Registry, Rules, Skipped, all_block_rules, all_subject_rules, analyse,
+    dispatch, resolve,
+};
 use laconic_packs::all;
 use std::path::Path;
+
+/// Every rule id the full set reports for one Go source.
+fn rules_fired(src: &str) -> Vec<&'static str> {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+    let analysis = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let rules = Rules {
+        block: all_block_rules(),
+        subject: all_subject_rules(),
+    };
+    let (findings, _) = dispatch(path, src, &analysis, &Registry::default(), &rules);
+    findings.into_iter().map(|f| f.rule).collect()
+}
 
 const SRC: &str = include_str!("../testdata/go/pipeline.go");
 
@@ -236,7 +253,7 @@ fn a_doc_block_carries_its_subject() {
     let subject = &a.subjects[doc.subject.expect("doc block has a subject")];
     assert_eq!(subject.visibility, Visibility::Exported);
     assert_eq!(
-        subject.statement_count, 3,
+        subject.member_count, 3,
         "Go nests statements one level deeper than `block`"
     );
     assert_eq!(
@@ -461,6 +478,95 @@ fn the_licence_carve_out_spares_a_package_comment() {
         bodies(&a).iter().any(|b| b.contains("Package x")),
         "the package comment survives: {:?}",
         bodies(&a)
+    );
+}
+
+fn members_of(src: &str, head: &str) -> usize {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    a.subjects
+        .iter()
+        .find(|s| src[s.span.clone()].starts_with(head))
+        .unwrap_or_else(|| {
+            panic!(
+                "no subject starting {head:?}; got {:?}",
+                a.subjects
+                    .iter()
+                    .map(|s| src[s.span.clone()].lines().next().unwrap_or(""))
+                    .collect::<Vec<_>>()
+            )
+        })
+        .member_count
+}
+
+/// Concern 9 for the type forms, which reach their members through no `body` field at all.
+///
+/// An interface's elements are `method_elem` and `type_elem` — an embedded interface counts, since
+/// it is part of the contract a caller reads. A struct reaches its fields through
+/// `field_declaration_list`, and a `const` block through its specs.
+#[test]
+fn a_go_type_counts_what_it_declares() {
+    let iface = "package x\n\ntype Store interface {\n\tio.Closer\n\tGet(k string) error\n\tPut(k string) error\n}\n";
+    assert_eq!(members_of(iface, "type Store"), 3);
+
+    let strukt = "package x\n\ntype Row struct {\n\tID string\n\tName string\n}\n";
+    assert_eq!(members_of(strukt, "type Row"), 2);
+
+    // A grouped block and a single declaration are two grammar shapes; both are the same count.
+    let grouped = "package x\n\nconst (\n\tA = 1\n\tB = 2\n\tC = 3\n)\n";
+    assert_eq!(members_of(grouped, "const ("), 3);
+    let single = "package x\n\nconst A = 1\n";
+    assert_eq!(members_of(single, "const A"), 1);
+
+    // Every other type form declares none, so only `docbloat`'s absolute cap reaches it.
+    let alias = "package x\n\ntype ID string\n";
+    assert_eq!(members_of(alias, "type ID"), 0);
+}
+
+/// A `package_clause` declares no members, which is what keeps an ordinary package comment quiet
+/// without `docbloat` carrying a special case for it.
+#[test]
+fn a_package_clause_has_no_members() {
+    let src = "// Package x parses the wire format.\n//\n// It is deliberately allocation-free, so\n// every entry point takes a caller buffer.\npackage x\n";
+    assert_eq!(members_of(src, "package x"), 0);
+    assert!(
+        !rules_fired(src).contains(&"docbloat"),
+        "a four-line package comment is not bloat: {:?}",
+        rules_fired(src)
+    );
+}
+
+/// The finding this whole change exists to produce: five lines of prose above a one-method
+/// interface. Under a row denominator the interface measured 3 — `interface {`, the signature, `}`
+/// — which put the threshold at nine lines and made the shape unreportable.
+#[test]
+fn a_one_method_interface_is_a_denominator() {
+    let src = "package x\n\n// CustomerLister exposes the customer-side enumeration the backfill\n// pipeline drives in its Prepare stage — the canonical list of customer\n// ids that exist. Satisfied by an ACL adapter wrapping\n// customerpublic.CustomerEnumerator. Per-customer purchase reads still\n// go through CustomerOrderArticleReader.\ntype CustomerLister interface {\n\tListIDs(ctx context.Context) ([]string, error)\n}\n";
+    assert_eq!(members_of(src, "type CustomerLister"), 1);
+    assert!(
+        rules_fired(src).contains(&"docbloat"),
+        "got {:?}",
+        rules_fired(src)
+    );
+}
+
+/// `density` was structurally blind to interfaces: `statement_count` read a `body` field that a
+/// `type_declaration` does not name, returned 0, and the divide-by-zero guard exempted every
+/// interface in every codebase from the one rule built to catch over-commenting.
+///
+/// The commentary here is detached rather than doc — a comment directly above a `method_elem` is
+/// that method's godoc, and `density` excludes Doc kind on purpose, because `docbloat` is the rule
+/// that measures a doc comment against its subject.
+#[test]
+fn density_reaches_an_interface() {
+    let src = "package x\n\ntype Store interface {\n\t// The two halves below are ordered by how\n\t// often they are called rather than by name,\n\t// which is a convention this package keeps\n\t// and no other package in the tree does.\n\t// A reader coming from elsewhere will look\n\t// for alphabetical order and not find it.\n\t// The ordering is load-bearing for the\n\t// generated mock, which emits in source\n\t// order and is diffed in review.\n\n\tGet(k string) error\n\tPut(k string) error\n}\n";
+    assert_eq!(members_of(src, "type Store"), 2);
+    assert!(
+        rules_fired(src).contains(&"density"),
+        "nine comment lines against two methods; got {:?}",
+        rules_fired(src)
     );
 }
 

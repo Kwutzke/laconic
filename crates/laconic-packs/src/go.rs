@@ -4,7 +4,6 @@
 //! the mechanism most likely to expose a positional assumption hiding in the engine rather than
 //! in a pack.
 
-use crate::common::rows_of;
 use laconic_engine::domain::{CommentKind, DeclaredSymbol, Visibility};
 use laconic_engine::pack::{BlankLinePolicy, DocComment, Pack};
 use laconic_grammars::Grammar;
@@ -162,38 +161,33 @@ impl Pack for GoPack {
         }
     }
 
-    /// Concern 9. Go interposes a `statement_list` between `block` and its statements: counting
-    /// `block`'s named children directly gives every function a statement count of one and makes
-    /// `density`'s ratio meaningless.
-    fn statement_count(&self, subject: Node, _src: &str) -> usize {
-        let Some(body) = subject.child_by_field_name("body") else {
-            return 0;
-        };
-        let mut cursor = body.walk();
-        let Some(list) = body
-            .named_children(&mut cursor)
-            .find(|n| n.kind() == "statement_list")
-        else {
-            return 0;
-        };
-        let mut cursor = list.walk();
-        list.named_children(&mut cursor)
-            .filter(|n| !n.is_extra())
-            .count()
-    }
-
-    /// The `block` for a func, and for `type T struct{…}` the type literal — `type_declaration`
-    /// names no fields at all, so reading a field would leave the relative test dead on the whole
-    /// set this pack deliberately makes documentable.
-    fn body_rows(&self, subject: Node, _src: &str) -> Option<usize> {
+    /// Concern 9. A func's members are its statements; a type's are whatever its literal declares.
+    ///
+    /// Go interposes a `statement_list` between `block` and its statements, so counting `block`'s
+    /// named children directly gives every function one member and makes both ratios meaningless.
+    /// `type_declaration` names no fields at all, which is why the type forms descend by kind.
+    fn member_count(&self, subject: Node, _src: &str) -> usize {
         if let Some(body) = subject.child_by_field_name("body") {
-            return Some(rows_of(body));
+            let mut cursor = body.walk();
+            let Some(list) = body
+                .named_children(&mut cursor)
+                .find(|n| n.kind() == "statement_list")
+            else {
+                return 0;
+            };
+            let mut cursor = list.walk();
+            return list
+                .named_children(&mut cursor)
+                .filter(|n| !n.is_extra())
+                .count();
         }
-        let mut cursor = subject.walk();
-        let spec = subject
-            .named_children(&mut cursor)
-            .find(|n| n.kind() == "type_spec")?;
-        Some(rows_of(spec.child_by_field_name("type")?))
+        match subject.kind() {
+            "type_declaration" => type_members(subject),
+            "const_declaration" | "var_declaration" => spec_count(subject),
+            // A `package_clause` declares no members, and neither does a struct field or a single
+            // interface element read as a subject in its own right.
+            _ => 0,
+        }
     }
 
     fn blank_line_policy(&self) -> BlankLinePolicy {
@@ -245,6 +239,60 @@ impl Pack for GoPack {
         }
         out
     }
+}
+
+/// A struct's fields or an interface's elements. Every other type form — an alias, a named slice, a
+/// func type — declares no members, and is measured by `docbloat`'s absolute cap alone.
+fn type_members(decl: Node) -> usize {
+    let mut cursor = decl.walk();
+    let Some(spec) = decl
+        .named_children(&mut cursor)
+        .find(|n| n.kind() == "type_spec")
+    else {
+        return 0;
+    };
+    let Some(literal) = spec.child_by_field_name("type") else {
+        return 0;
+    };
+    match literal.kind() {
+        "struct_type" => {
+            let mut cursor = literal.walk();
+            literal
+                .named_children(&mut cursor)
+                .find(|n| n.kind() == "field_declaration_list")
+                .map_or(0, |list| count_kinds(list, &["field_declaration"]))
+        }
+        // An interface has two element kinds and neither is a `field_declaration`: `method_elem`,
+        // and `type_elem` for an embedded interface or a type set.
+        "interface_type" => count_kinds(literal, &["method_elem", "type_elem"]),
+        _ => 0,
+    }
+}
+
+/// The specs a `const` or `var` block declares. Both shapes, since the grouped `var ( … )` form
+/// nests its specs one level further down than the single form.
+fn spec_count(decl: Node) -> usize {
+    let kind = if decl.kind() == "const_declaration" {
+        "const_spec"
+    } else {
+        "var_spec"
+    };
+    let mut cursor = decl.walk();
+    decl.named_children(&mut cursor)
+        .map(|child| {
+            if child.kind() == kind {
+                return 1;
+            }
+            count_kinds(child, &[kind])
+        })
+        .sum()
+}
+
+fn count_kinds(node: Node, kinds: &[&str]) -> usize {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .filter(|n| kinds.contains(&n.kind()))
+        .count()
 }
 
 const PACKAGE: &str = "package";

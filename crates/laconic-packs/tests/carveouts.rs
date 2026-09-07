@@ -72,12 +72,8 @@ impl Pack for WithoutCarveOut {
     fn visibility(&self, subject: Node, src: &str) -> Visibility {
         self.inner.visibility(subject, src)
     }
-    fn statement_count(&self, subject: Node, src: &str) -> usize {
-        self.inner.statement_count(subject, src)
-    }
-
-    fn body_rows(&self, subject: Node, src: &str) -> Option<usize> {
-        self.inner.body_rows(subject, src)
+    fn member_count(&self, subject: Node, src: &str) -> usize {
+        self.inner.member_count(subject, src)
     }
     fn blank_line_policy(&self) -> BlankLinePolicy {
         self.inner.blank_line_policy()

@@ -9,8 +9,8 @@
 //! use a map -->` invisible to every rule.
 
 use crate::common::{
-    count_statements, declared_name, descendants_of_kind, is_exported_declaration, is_marker_doc,
-    preceding_comment, rows_of, strip_c_markers, visibility_from_export,
+    count_members, declared_name, descendants_of_kind, is_exported_declaration, is_marker_doc,
+    preceding_comment, strip_c_markers, visibility_from_export,
 };
 use laconic_engine::domain::{CommentKind, DeclaredSymbol, Visibility};
 use laconic_engine::pack::{BlankLinePolicy, DocComment, Pack};
@@ -61,6 +61,15 @@ const DECLARATIONS: &[&str] = &[
     "method_definition",
     "public_field_definition",
     "abstract_class_declaration",
+];
+
+/// Body kinds whose named children are the subject's members — pack concern 9.
+const MEMBER_CONTAINERS: &[&str] = &[
+    "statement_block",
+    "class_body",
+    "interface_body",
+    "enum_body",
+    "object_type",
 ];
 
 pub struct TypeScriptPack;
@@ -151,17 +160,15 @@ impl Pack for TypeScriptPack {
         visibility_from_export(subject)
     }
 
-    fn statement_count(&self, subject: Node, _src: &str) -> usize {
+    /// Concern 9. The `body` field is not enough on its own here: a `type_alias_declaration` and an
+    /// arrow function name one that is a type or an expression, whose named children are its
+    /// syntax rather than anything a comment documents. Only the containers in
+    /// [`MEMBER_CONTAINERS`] hold members.
+    fn member_count(&self, subject: Node, _src: &str) -> usize {
         match subject.child_by_field_name("body") {
-            Some(body) if body.kind() == "statement_block" => count_statements(body, &[]),
+            Some(body) if MEMBER_CONTAINERS.contains(&body.kind()) => count_members(body, &[]),
             _ => 0,
         }
-    }
-
-    /// Unlike `statement_count`, every body kind counts — a `class_body` and an `interface_body`
-    /// have rows a doc comment can be measured against even though they hold no statements.
-    fn body_rows(&self, subject: Node, _src: &str) -> Option<usize> {
-        Some(rows_of(subject.child_by_field_name("body")?))
     }
 
     fn blank_line_policy(&self) -> BlankLinePolicy {

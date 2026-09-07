@@ -79,21 +79,17 @@ pub trait Pack {
     /// Concern 8 — a subject's own visibility.
     fn visibility(&self, subject: Node, src: &str) -> Visibility;
 
-    /// Concern 9 — statements in a subject's body, for `density`'s ratio.
-    fn statement_count(&self, subject: Node, src: &str) -> usize;
-
-    /// Concern 9's other half — the rows that body spans, for `docbloat`'s relative test.
+    /// Concern 9 — the members a subject declares, in whatever unit the language has: statements
+    /// for a function body, methods and embedded types for an interface, fields for a struct,
+    /// variants for an enum, specs for a Go `const` or `var` block.
     ///
-    /// `None` when the subject has no body at all: a Go `package_clause`, a const, a file root.
-    /// There is nothing to measure a doc comment against, and treating the declaration's own
-    /// extent as a body made every four-line package comment a finding.
+    /// Both proportional rules measure against this. It replaced a row count, which was a proxy for
+    /// the fact the tree already holds and came apart from it in both directions — syntax rows
+    /// inflating a one-method interface to three, and a tuple variant's body spanning one row.
     ///
-    /// **Answered by the pack, not defaulted in the engine.** A default reading the `body` field
-    /// asked whether the grammar happens to name a field, which is not the same question: Go's
-    /// `type_declaration` names no fields at all yet a struct literal has a real extent, while
-    /// Rust's `enum_variant` does name one and a tuple variant's spans a single row. Every pack
-    /// answers this beside `statement_count`, which already locates the same node.
-    fn body_rows(&self, subject: Node, src: &str) -> Option<usize>;
+    /// **Zero is a real answer, not a missing one**: a Go `package_clause`, a const, a file root
+    /// declare no members, and a rule with no denominator measures by its absolute threshold alone.
+    fn member_count(&self, subject: Node, src: &str) -> usize;
 
     /// Concern 10 — what happens to the whitespace around a removed block.
     fn blank_line_policy(&self) -> BlankLinePolicy;
