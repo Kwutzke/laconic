@@ -28,10 +28,14 @@ const MIN_CODE_NODES: usize = 3;
 /// a variable called x.
 const MIN_SYMBOL_LEN: usize = 3;
 
-/// `docbloat`'s cap, applied whatever the subject declares. The specification's stated number with
-/// no measurement behind it; AC7 settles whether it drops. That it is *unconditional* is a design
-/// decision and does not wait for a corpus run.
-const ABSOLUTE_DOC_LINES: usize = 15;
+/// `docbloat`'s cap, applied whatever the subject declares.
+///
+/// Six is the repository owner's ruling against the corpus, replacing the specification's stated 15
+/// — a number with no measurement behind it that missed a nine-line policy essay above a slice
+/// literal. The escape is charter constraint 5: a comment that genuinely earns more carries
+/// `laconic:ignore docbloat — <reason>`, which converts "what length is always wrong" into "what
+/// length should require someone to say why".
+const ABSOLUTE_DOC_LINES: usize = 6;
 
 /// `docbloat`'s ratio, and `density`'s below it. Both carried over from the row-based tests they
 /// replaced — the denominator changed, the multipliers are still AC7's to calibrate.
