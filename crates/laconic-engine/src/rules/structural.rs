@@ -236,11 +236,21 @@ impl BlockRule for ImplInInterface {
         if !subject.visibility.is_exported() {
             return None;
         }
-        let body = crate::rules::matching::cased_words(&ctx.block.body());
+        let text = ctx.block.body();
+        let body = crate::rules::matching::cased_words(&text);
         let leaked = ctx.declared.iter().find(|d| {
-            !d.visibility.is_exported()
-                && d.name.chars().count() >= MIN_SYMBOL_LEN
-                && body.contains(&d.name.to_string())
+            if d.visibility.is_exported() || d.name.chars().count() < MIN_SYMBOL_LEN {
+                return false;
+            }
+            // Marked as code by the author — `normalize()`, a code span, or a selector — is a
+            // reference whatever the name is, so this arm runs before the word test.
+            if crate::rules::matching::referenced_as_code(&text, &d.name) {
+                return true;
+            }
+            // A bare occurrence counts only where the name is not also an ordinary English word.
+            // `buildSearchInfos` in plain prose is unambiguous; "each lock acquisition" is a
+            // sentence that happens to contain an identifier's letters.
+            body.contains(&d.name.to_string()) && !crate::rules::matching::is_common_word(&d.name)
         })?;
         Some(RuleHit::new(
             ctx.block.span.clone(),

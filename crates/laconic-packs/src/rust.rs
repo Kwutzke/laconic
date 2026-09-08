@@ -180,11 +180,35 @@ impl Pack for RustPack {
                 Some(DeclaredSymbol {
                     name: name.to_string(),
                     form: form_of(item.kind()),
-                    visibility: self.visibility(item, src),
+                    visibility: if in_trait_impl(item) {
+                        Visibility::Exported
+                    } else {
+                        self.visibility(item, src)
+                    },
                 })
             })
             .collect()
     }
+}
+
+/// Whether an item is a member of a **trait** impl — `impl Display for Foo`, not `impl Foo`.
+///
+/// Such a member carries no `pub` and is reachable by anyone with the trait in scope, so reporting
+/// it as unexported is a category error rather than a strict reading. `impl Default for Thresholds`
+/// declares `default` and `impl From<A> for B` declares `from`, which made those two words
+/// unusable in every doc comment in the file — including sentences where the word is plain English.
+///
+/// The `trait` field is what separates the two impl forms; an inherent `impl Foo { fn helper() }`
+/// has none, and its private methods really are private.
+fn in_trait_impl(item: Node) -> bool {
+    let mut node = item.parent();
+    while let Some(current) = node {
+        if current.kind() == "impl_item" {
+            return current.child_by_field_name("trait").is_some();
+        }
+        node = current.parent();
+    }
+    false
 }
 
 fn form_of(kind: &str) -> &'static str {
