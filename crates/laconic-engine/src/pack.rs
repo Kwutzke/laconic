@@ -1,4 +1,4 @@
-//! The pack interface: eleven concerns, four declarations and seven strategies.
+//! The pack interface: twelve concerns, five declarations and seven strategies.
 //!
 //! What protects charter constraint 4 is this enumeration plus the trait being open — not a claim
 //! that per-language strategies collapse. A language whose strategy fits nothing already here
@@ -29,13 +29,9 @@ pub enum BlankLinePolicy {
     LeaveSurrounding,
     /// Remove the block's lines, then the run of blank lines **below** the removal.
     ///
-    /// Below only, never above: taking a blank above would let a removal sitting under a
-    /// declaration pull that declaration up against whatever precedes it.
-    ///
-    /// That bound is why this is not "collapse to one". With one blank on each side — the ordinary
-    /// case, and what the name was coined for — removing the run below leaves exactly one. Where
-    /// the blanks *above* already run longer, they stay, because the only way to reach one from
-    /// there is the edit this policy refuses to make.
+    /// Below only: taking a blank above would let a removal under a declaration pull it up against
+    /// what precedes it. So this is not "collapse to one" — one blank each side reduces to one,
+    /// which is the case the name was coined for, but a longer run above stays.
     CollapseRun,
 }
 
@@ -74,8 +70,8 @@ pub trait Pack {
     ///
     /// `density` measures a function whether or not anyone documented it, and `docbloat` and
     /// `implInInterface` need the declaration rather than whatever a comment happened to sit above.
-    /// A pack that can answer `doc_comments` already knows this set; both read one piece of
-    /// knowledge, which is why this is not a twelfth concern.
+    /// A pack that can answer `doc_comments` already knows this set, which is why the two share a
+    /// concern number.
     fn subject_nodes<'t>(&self, root: Node<'t>) -> Vec<Node<'t>>;
 
     /// Concern 7 — the comment body with its markers removed.
@@ -102,18 +98,13 @@ pub trait Pack {
     /// Concern 10 — what happens to the whitespace around a removed block.
     fn blank_line_policy(&self) -> BlankLinePolicy;
 
-    /// What wraps a fragment of statements so it parses — `commentedOutCode`, and nothing else.
+    /// Concern 12 — what wraps a fragment of statements so it parses, for `commentedOutCode`.
     ///
-    /// A commented-out `if err != nil { … }` is not a compilation unit in Go, Rust or Java, so
-    /// parsing the comment body on its own reports ERROR and the rule stays silent on the commonest
-    /// leftover there is. Wrapped in a function it parses cleanly.
+    /// A commented-out `if err != nil { … }` is not a compilation unit in Go, Rust or Java, so the
+    /// body alone reports ERROR and the rule stays silent on the commonest leftover there is.
     ///
-    /// `None` where statements are already valid at the top level, which is Python and TypeScript.
-    /// The default is `None` rather than a guess, so a new pack misses findings rather than
-    /// inventing them.
-    ///
-    /// Whether a body is code is a per-language question and the scaffold is per-language
-    /// knowledge, which is why this is a pack concern and not a match in the rule.
+    /// `None` where statements already parse at the top level — Python and TypeScript — and as the
+    /// default, so a new pack misses findings rather than inventing them.
     fn statement_scaffold(&self) -> Option<(&'static str, &'static str)> {
         None
     }
@@ -128,15 +119,13 @@ pub trait Pack {
     /// an ordinary statement for a trailing block — not only with a subject.
     ///
     /// The node's **header**, not its body: a function that prints `x` would otherwise bind every
-    /// identifier its body mentions, and `restate` — which fires when a comment's tokens are a
-    /// subset of these — would match almost any comment above almost any function. The exclusion
-    /// is keyed on the `body` field, so it protects only nodes that have one; `preceding_code_node`
-    /// returns the outermost node ending at the offset for that reason, since the inner `block` of
-    /// a loop carries no `body` field and would leak the whole loop body.
+    /// identifier its body mentions, and `restate` would then match almost any comment above almost
+    /// any function. The exclusion is keyed on the `body` field, so it protects only nodes that
+    /// have one.
     ///
-    /// Provided, because every pinned grammar names identifier nodes with an `identifier` suffix
-    /// and names the body field `body`. A language that does neither overrides this, which is the
-    /// open-trait escape hatch rather than an engine change.
+    /// Provided, because every pinned grammar suffixes identifier nodes with `identifier` and names
+    /// the body field `body`. A language that does neither overrides this — the open-trait escape
+    /// hatch rather than an engine change.
     fn bound_identifiers(&self, subject: Node, src: &str) -> Vec<String> {
         let body = subject.child_by_field_name("body").map(|b| b.id());
         let mut cursor = subject.walk();

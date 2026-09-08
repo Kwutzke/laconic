@@ -61,6 +61,13 @@ impl From<Registry> for Resolved {
 #[serde(deny_unknown_fields)]
 pub struct RuleConfig {
     pub enabled: Option<bool>,
+    /// One tier for the whole rule, applied to every kind the rule already applies to.
+    ///
+    /// The registry's dispositions are per kind — `narration` gates a line comment and warns on a
+    /// doc comment — and this key cannot express that, so setting it flattens the distinction.
+    /// There is deliberately no per-kind channel: a rule treating a doc comment differently is the
+    /// registry's ruling, not a repository's. The consequence worth knowing is that a config cannot
+    /// restate such a rule's defaults, which is why `defaults_toml` never emits this key.
     pub tier: Option<TierName>,
     pub autofix: Option<bool>,
 }

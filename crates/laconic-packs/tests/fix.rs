@@ -1,8 +1,11 @@
 //! AC5 and AC6 for `laconic fix`, over every fixture in the corpus.
 //!
-//! AC5 is conditional by design: a file carrying ERROR nodes is still processed, and no fix removes
-//! a syntax error it did not create — so the claim is that fixing introduces none. AC6 is
-//! idempotence, which catches a directive outliving its block and collapsing that eats a line a pass.
+//! AC5 is conditional by design: a file carrying ERROR nodes is still processed, so the claim is
+//! that fixing introduces no error it did not find. AC6 is idempotence, which catches a collapse
+//! eating a line per pass.
+//!
+//! **AC6 does not catch an orphaned directive** — `deadIgnore` is Rewrite and `fix` applies only
+//! Delete, so the text is identical either way. The assertions below catch it.
 
 use laconic_engine::{
     Config, Registry, Resolved, Rules, all_block_rules, all_subject_rules, analyse, dispatch, fix,
@@ -169,8 +172,9 @@ fn a_trailing_comment_still_keeps_the_code_before_it() {
 /// A directive naming a *different* rule is the case that orphans one.
 ///
 /// Suppression is per rule, so a block carrying `laconic:ignore restate` still reports `banner` and
-/// still gets deleted. Leaving the directive behind makes the next run report `deadIgnore` — a
-/// finding `fix` manufactured — which is what AC6 catches.
+/// still gets deleted. Leaving the directive behind makes the next run report `deadIgnore`, a
+/// finding `fix` manufactured — caught by the assertion below rather than by AC6, which cannot see
+/// it: `deadIgnore` is Rewrite, `fix` applies only Delete, so the text is identical either way.
 #[test]
 fn a_removed_block_takes_its_directive_with_it() {
     let src = "package x\n\nfunc f() int {\n\t// laconic:ignore restate — the names are the point\n\t// ---- helpers ----\n\treturn 1\n}\n";

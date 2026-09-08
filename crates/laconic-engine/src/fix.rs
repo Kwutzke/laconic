@@ -49,17 +49,13 @@ fn block_at<'a>(analysis: &'a FileAnalysis, span: &Range<usize>) -> Option<&'a C
 /// What one block's removal takes with it.
 ///
 /// **A block sharing its line with code keeps that line, whichever side the code is on.** Only a
-/// block that owns every line it touches is removed by whole lines, together with the directive
-/// protecting it — a directive outliving its block is a `deadIgnore` finding this function would
-/// have manufactured.
+/// block owning every line it touches goes by whole lines, together with the directive protecting
+/// it — a directive outliving its block is a `deadIgnore` finding this function would have
+/// manufactured.
 ///
-/// The two sides are separate questions and were not always asked as one. `trailing` answers the
-/// first, and `has_code_before` is what sets it — from the text *before* the comment on its opening
-/// line. Nothing asked about the text after it, so a block comment that opens a line and has code
-/// after it —
-/// `/* ---- helpers ---- */ func f() {}`, which `banner` reports at gate tier with autofix on —
-/// fell to the whole-line branch and `laconic fix` deleted the declaration. Nothing caught it:
-/// the residue parses, and a second pass is a no-op, so both AC5 and AC6 stayed green.
+/// Both sides are asked because `trailing` answers only one: it is set from the text *before* the
+/// comment, so `/* ---- helpers ---- */ func f() {}` fell to the whole-line branch and `fix`
+/// deleted the declaration, with the residue parsing clean and a second pass a no-op.
 fn deletion_range(src: &str, block: &CommentBlock, policy: BlankLinePolicy) -> Range<usize> {
     let code_before = block.comments.iter().any(|c| c.trailing);
     let code_after = !src[block.span.end..]
@@ -93,13 +89,8 @@ fn deletion_range(src: &str, block: &CommentBlock, policy: BlankLinePolicy) -> R
         end = end.max(line_end(src, directive.span.end));
     }
 
-    // Collapsing takes blank lines *below*, never the ones above, so a removal directly under a
-    // declaration cannot pull that declaration up against the previous one.
-    //
-    // **The whole run below, less one.** `blank_above` and `blank_below` each test a single line,
-    // and taking one blank left two wherever the run was longer — which is `DropOneBlank` wearing
-    // `CollapseRun`'s name. The blanks above are counted only to know a run exists on both sides;
-    // what is removed is measured below.
+    // Below, never above, so a removal under a declaration cannot pull it up against the previous
+    // line. The whole run goes: taking one blank left the rest wherever the run was longer.
     if policy == BlankLinePolicy::CollapseRun && blank_above(src, start) && blank_below(src, end) {
         let mut cursor = end;
         while blank_below(src, cursor) {

@@ -14,7 +14,14 @@ fn parse(text: &str) -> ConfigFile {
     toml::from_str(text).expect("parses")
 }
 
-/// A default run and a config stating only the defaults are the same run — AC9's own test.
+/// The four thresholds round-trip: stating their defaults resolves to the defaults.
+///
+/// **Not the whole of AC9.** `RuleConfig` carries one `tier` per rule while dispositions are per
+/// kind, so a config stating `narration`'s default Line tier would also set its Doc tier to Gate
+/// where the default is Warn — "a config stating only the defaults" is inexpressible for the rules
+/// whose kinds differ. AC9 holds for the file laconic actually writes, because `defaults_toml`
+/// emits `enabled` and `autofix` and never `tier`, and the CLI suite asserts that end to end by
+/// comparing the output of two runs.
 #[test]
 fn stating_the_defaults_changes_nothing() {
     let empty = ConfigFile::default();

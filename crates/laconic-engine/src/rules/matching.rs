@@ -112,9 +112,10 @@ pub fn referenced_as_code(body: &str, name: &str) -> bool {
 /// Whether a name is an ordinary English word rather than an identifier a reader would recognise
 /// as one.
 ///
-/// The list is deliberately short and holds only words nobody would coin as a symbol *in
-/// isolation*. A compound reads as an identifier however common its parts — `buildSearchInfos` and
-/// `knownSortFields` are unambiguous in plain prose — so only the bare word is in question here.
+/// The list is deliberately short. Being on it does not mean nobody would coin the word as a
+/// symbol — `normalize` and `dispatch` are on it and are perfectly good method names — it means the
+/// bare word in prose is not by itself evidence of one. A compound reads as an identifier however
+/// common its parts, so `buildSearchInfos` and `knownSortFields` are never in question here.
 ///
 /// Being on this list is not an exemption: [`referenced_as_code`] still fires on `lock()` and
 /// `` `page` ``. The list decides one thing only, which is whether a bare occurrence in prose is
@@ -132,8 +133,8 @@ pub fn is_common_word(name: &str) -> bool {
     if known(&lower) {
         return true;
     }
-    // `files` → `file`, then `matches` → `match`. Nothing is stripped twice, so `status` reduces to
-    // `statu` and stops there rather than reaching `stat`.
+    // `files` → `file`; `matches` → `match`, the `e` coming off only after the `s`. One pass, so
+    // `stats` reaches `stat`, finds it absent, and stops rather than stripping again.
     match lower.strip_suffix('s') {
         Some(singular) => known(singular) || singular.strip_suffix('e').is_some_and(known),
         None => false,
@@ -825,9 +826,10 @@ pub fn words(body: &str) -> Vec<String> {
 
 /// The same split, with case preserved.
 ///
-/// `implInInterface` needs this and the other rules do not: it compares a comment's words against
-/// declared identifiers, where case is the difference between an exported symbol and its unexported
-/// twin. Every other rule matches prose against prose, where case carries nothing.
+/// `implInInterface` needs this. It is not the only rule comparing a comment's words to
+/// identifiers — `restate` does too — but it is the only one where **case decides**, because an
+/// exported symbol and its unexported twin differ in nothing else. `restate` asks whether a comment
+/// says only what the code beside it already binds, and a name is that name in either case.
 pub fn cased_words(body: &str) -> Vec<String> {
     body.split(|c: char| !is_word(c))
         .filter(|w| !w.is_empty())
