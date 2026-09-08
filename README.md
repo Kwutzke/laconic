@@ -167,4 +167,4 @@ the linter disabled on day one, so each carve-out is written before the rule it 
 
 ## Licence
 
-MIT.
+MIT — see [`LICENSE`](LICENSE).
