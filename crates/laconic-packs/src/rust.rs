@@ -168,6 +168,11 @@ impl Pack for RustPack {
         }
     }
 
+    /// Concern 12 — statements are not items, so a fragment parses only inside a function.
+    fn statement_scaffold(&self) -> Option<(&'static str, &'static str)> {
+        Some(("fn scaffold() {\n", "\n}\n"))
+    }
+
     fn blank_line_policy(&self) -> BlankLinePolicy {
         BlankLinePolicy::CollapseRun
     }

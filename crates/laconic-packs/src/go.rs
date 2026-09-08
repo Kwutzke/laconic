@@ -210,6 +210,12 @@ impl Pack for GoPack {
         }
     }
 
+    /// Concern 12 — a statement fragment is not a Go compilation unit, so a commented-out
+    /// `if err != nil { … }` parses only inside a function.
+    fn statement_scaffold(&self) -> Option<(&'static str, &'static str)> {
+        Some(("package p\nfunc scaffold() {\n", "\n}\n"))
+    }
+
     fn blank_line_policy(&self) -> BlankLinePolicy {
         BlankLinePolicy::CollapseRun
     }

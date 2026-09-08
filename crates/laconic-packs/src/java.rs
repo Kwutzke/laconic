@@ -127,6 +127,11 @@ impl Pack for JavaPack {
         }
     }
 
+    /// Concern 12 — every Java statement lives in a method inside a class, so a fragment needs both.
+    fn statement_scaffold(&self) -> Option<(&'static str, &'static str)> {
+        Some(("class Scaffold { void m() {\n", "\n} }\n"))
+    }
+
     fn blank_line_policy(&self) -> BlankLinePolicy {
         BlankLinePolicy::CollapseRun
     }

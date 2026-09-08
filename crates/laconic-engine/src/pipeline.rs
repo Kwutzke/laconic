@@ -33,6 +33,9 @@ pub struct FileAnalysis {
     pub source_extensions: Vec<&'static str>,
     /// The grammar this file was parsed with, for `commentedOutCode`.
     pub grammar: Grammar,
+    /// What wraps a statement fragment so it parses — concern 12, also `commentedOutCode`. Carried
+    /// as data rather than as the pack, for the reason `source_extensions` is.
+    pub statement_scaffold: Option<(&'static str, &'static str)>,
     /// Directives that bound to no block.
     ///
     /// Kept rather than dropped: `ignoreReason` fires on a directive lacking a reason, and a
@@ -262,6 +265,7 @@ pub fn analyse(
         unbound_directives,
         source_extensions: pack.extensions().iter().map(|(e, _)| *e).collect(),
         grammar,
+        statement_scaffold: pack.statement_scaffold(),
     })
 }
 

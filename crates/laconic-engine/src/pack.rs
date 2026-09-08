@@ -94,6 +94,22 @@ pub trait Pack {
     /// Concern 10 — what happens to the whitespace around a removed block.
     fn blank_line_policy(&self) -> BlankLinePolicy;
 
+    /// What wraps a fragment of statements so it parses — `commentedOutCode`, and nothing else.
+    ///
+    /// A commented-out `if err != nil { … }` is not a compilation unit in Go, Rust or Java, so
+    /// parsing the comment body on its own reports ERROR and the rule stays silent on the commonest
+    /// leftover there is. Wrapped in a function it parses cleanly.
+    ///
+    /// `None` where statements are already valid at the top level, which is Python and TypeScript.
+    /// The default is `None` rather than a guess, so a new pack misses findings rather than
+    /// inventing them.
+    ///
+    /// Whether a body is code is a per-language question and the scaffold is per-language
+    /// knowledge, which is why this is a pack concern and not a match in the rule.
+    fn statement_scaffold(&self) -> Option<(&'static str, &'static str)> {
+        None
+    }
+
     /// Concern 11 — every declaration in the file with its visibility, so `implInInterface` can
     /// resolve a name in a doc comment. Concern 8 describes one subject and cannot answer this.
     fn declared_symbols(&self, root: Node, src: &str) -> Vec<DeclaredSymbol>;

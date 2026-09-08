@@ -38,6 +38,9 @@ pub struct BlockContext<'a> {
     /// The grammar this file was parsed with, so `commentedOutCode` can parse a comment body in the
     /// file's own language. Opaque to the rule: it parses, it does not branch on which language.
     pub grammar: Grammar,
+    /// What wraps a statement fragment so it parses — concern 12, for `commentedOutCode`. A pair of
+    /// strings rather than the pack: a rule holding a pack is a rule with a per-language branch.
+    pub statement_scaffold: Option<(&'static str, &'static str)>,
     /// The numeric thresholds for **this file's language**, already narrowed by any override.
     ///
     /// Per file rather than per run, and that is the language-override mechanism rather than a

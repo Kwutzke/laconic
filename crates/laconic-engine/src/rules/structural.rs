@@ -132,16 +132,36 @@ impl BlockRule for CommentedOutCode {
         if body.trim().is_empty() {
             return None;
         }
-        let tree = ctx.grammar.parser().parse(&body, None)?;
-        let root = tree.root_node();
-
-        // `has_error` rather than a walk counting ERROR nodes. A body can parse to a clean-looking
-        // tree with a MISSING node that no traversal of `children` reaches — a bare identifier does
-        // exactly that — and only this reports it.
-        if root.has_error() {
+        // Code names something. A body of digits and operators names nothing, and the grammars are
+        // looser here than the languages are: Go parses `1.2 + 0.7 = 1.9` as an `assignment_statement`
+        // without asking whether the left side can be assigned to, so arithmetic worked out in a
+        // comment came back as clean code with seven named nodes.
+        if !body.chars().any(char::is_alphabetic) {
             return None;
         }
-        if named_nodes(root) < MIN_CODE_NODES {
+        // Two attempts: the body alone, then the body wrapped as a statement fragment.
+        //
+        // The bare parse is what catches a commented-out declaration, and it is tried first so a
+        // body that is already a compilation unit is judged as one. It cannot catch a fragment of
+        // statements: `if err != nil { … }` is not a Go file, not a Rust item and not a Java class,
+        // so the commonest leftover of all parsed to ERROR and this rule never saw it.
+        //
+        // The scaffold is the pack's, not this rule's — concern 12. Where a pack states none,
+        // statements already parse at the top level and the first attempt was the whole test.
+        let counted = parses_as_code(ctx.grammar, &body).or_else(|| {
+            // The scaffold path is gated on punctuation, and the gate is not optional. Inside a
+            // function body almost any bare word is a valid expression statement, so wrapping makes
+            // the grammar *more* permissive than the bare parse rather than less: `// HELPERS`,
+            // `// counter` and a two-line `// alpha / // bravo` all came back as clean code, and
+            // `MIN_CODE_NODES` does not bound it because two words are already four nodes.
+            //
+            // Real statements carry an operator or a bracket; prose does not. This is the whole
+            // difference between the fragment the rule is here for and a section label.
+            has_code_punctuation(&body)
+                .then(|| scaffolded(ctx.grammar, &body, ctx.statement_scaffold?))
+                .flatten()
+        })?;
+        if counted < MIN_CODE_NODES {
             return None;
         }
         Some(RuleHit::new(
@@ -149,6 +169,42 @@ impl BlockRule for CommentedOutCode {
             "delete this commented-out code: version control already has it",
         ))
     }
+}
+
+/// Whether a body carries punctuation that statements have and sentences do not.
+///
+/// Deliberately not `.`, `,`, `:` or `-`: prose is full of them. Brackets and `=` are what a
+/// statement fragment cannot avoid and a section label never has.
+fn has_code_punctuation(body: &str) -> bool {
+    body.contains(['=', '(', ')', '{', '}', '[', ']', ';'])
+}
+
+/// The named-node count of `text`, or `None` where it does not parse cleanly.
+///
+/// `has_error` rather than a walk counting ERROR nodes. A body can parse to a clean-looking tree
+/// with a MISSING node that no traversal of `children` reaches — a bare identifier does exactly
+/// that — and only this reports it.
+fn parses_as_code(grammar: laconic_grammars::Grammar, text: &str) -> Option<usize> {
+    let tree = grammar.parser().parse(text, None)?;
+    let root = tree.root_node();
+    (!root.has_error()).then(|| named_nodes(root))
+}
+
+/// The same count for a body wrapped in its pack's scaffold, minus what the scaffold itself
+/// contributes.
+///
+/// Subtracting the wrapper is what keeps [`MIN_CODE_NODES`] meaning the same thing in both
+/// attempts. Go's scaffold alone brings a package clause and a function declaration, which would
+/// otherwise carry a one-token body over the threshold on their own.
+fn scaffolded(
+    grammar: laconic_grammars::Grammar,
+    body: &str,
+    scaffold: (&'static str, &'static str),
+) -> Option<usize> {
+    let (prefix, suffix) = scaffold;
+    let empty = parses_as_code(grammar, &format!("{prefix}{suffix}"))?;
+    let full = parses_as_code(grammar, &format!("{prefix}{body}{suffix}"))?;
+    Some(full.saturating_sub(empty))
 }
 
 fn named_nodes(root: tree_sitter::Node) -> usize {
