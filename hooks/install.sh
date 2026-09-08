@@ -31,12 +31,21 @@ mkdir -p "$hooks"
 # lives on a feature branch, so that link dangles whenever the main checkout is on another branch.
 # The cost of copying is that editing hooks/pre-commit needs a re-install, which is what the last
 # line prints.
-if [ -e "$target" ] && ! cmp -s "$source" "$target"; then
-  echo "install: $target exists and differs from $source" >&2
-  echo "install: move it aside, or re-run after checking it is not another tool's hook" >&2
+#
+# The guard reads a marker, not the content. Comparing content refused exactly the case the
+# installer exists to serve: editing hooks/pre-commit is what makes source and target differ, so the
+# re-install that edit calls for took the refusal branch and exited 1. A marker says "this hook is
+# ours" whatever it now contains, and says nothing about anyone else's.
+if [ -e "$target" ] && ! grep -q '^# laconic-hook: pre-commit$' "$target" 2>/dev/null; then
+  echo "install: $target exists and is not laconic's — move it aside first" >&2
   exit 1
 fi
 
+# **Removed before copying.** `cp` writes *through* a symlink at the destination, so upgrading from
+# the version of this script that used `ln -s` followed the link and wrote into the worktree it
+# pointed at — leaving `.git/hooks/pre-commit` a symlink, reporting success, and keeping the
+# dangling-link failure this copy exists to remove.
+rm -f "$target"
 cp "$source" "$target"
 chmod +x "$target"
 echo "installed $target"

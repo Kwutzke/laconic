@@ -169,6 +169,30 @@ fn a_trailing_comment_still_keeps_the_code_before_it() {
     );
 }
 
+/// Code on **both** sides keeps the gap between them.
+///
+/// The two trims were independent, so both fired and the tokens joined: `if /* n */ x > 1` fixed to
+/// `ifx > 1`. `var x /* n */ int = 1` is the worse shape — it becomes `var xint = 1`, which still
+/// parses, so AC5 stayed green while a declaration was renamed.
+#[test]
+fn a_comment_between_two_tokens_leaves_them_separated() {
+    let once = fixed(
+        "x.go",
+        "package x\n\nfunc f(x int) int {\n\tif /* changed to use a map */ x > 1 {\n\t\treturn 2\n\t}\n\treturn x\n}\n",
+    );
+    assert!(once.contains("\tif x > 1 {"), "tokens joined:\n{once}");
+    assert!(!once.contains("changed to use a map"), "{once}");
+
+    let decl = fixed(
+        "x.go",
+        "package x\n\nfunc f() {\n\tvar x /* changed to use a map */ int = 1\n\t_ = x\n}\n",
+    );
+    assert!(
+        decl.contains("var x int = 1"),
+        "declaration renamed:\n{decl}"
+    );
+}
+
 /// A directive naming a *different* rule is the case that orphans one.
 ///
 /// Suppression is per rule, so a block carrying `laconic:ignore restate` still reports `banner` and

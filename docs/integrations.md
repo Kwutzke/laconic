@@ -16,9 +16,14 @@ cargo build -p laconic-cli
 hooks/install.sh
 ```
 
-`hooks/install.sh` **copies** `hooks/pre-commit` into the repository's hook directory. It installs
-one file and refuses to overwrite a pre-commit hook whose content differs from the one it installs.
-It can be run from anywhere in the repository.
+`hooks/install.sh` **copies** `hooks/pre-commit` into the repository's hook directory, removing
+whatever is there first — `cp` alone writes *through* a symlink, which would leave an older
+link-based install in place while reporting success. It installs one file and can be run from
+anywhere in the repository.
+
+It refuses to overwrite a hook that is not laconic's, and decides that by the `# laconic-hook:`
+marker rather than by comparing content: editing `hooks/pre-commit` is precisely what makes the
+content differ, so a content check refused the re-install that the edit calls for.
 
 **A copy rather than a symlink, and re-run it after editing the hook.** The hook directory is shared
 by the main checkout and every worktree, while the source file belongs to whichever tree ran the

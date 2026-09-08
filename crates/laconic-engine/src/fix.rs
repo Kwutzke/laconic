@@ -64,16 +64,19 @@ fn deletion_range(src: &str, block: &CommentBlock, policy: BlankLinePolicy) -> R
         .all(char::is_whitespace);
 
     if code_before || code_after {
-        // The comment's span plus the whitespace on whichever side it was joined to code. Trimming
-        // the near side only is what keeps `x := 1 // note` from leaving a trailing space and
-        // `/* note */ func f()` from leaving a leading one, while `a := 1 /* n */ + 2` — code on
-        // both sides — closes to a single space rather than none.
+        // The comment's span plus the whitespace on **one** side, never both.
+        //
+        // Each side reclaims the gap it owns: `x := 1 // note` loses the space before the comment,
+        // `/* note */ func f()` the space after. With code on both sides only the leading trim
+        // runs, because taking both closes the gap to nothing and joins the tokens —
+        // `if /* n */ x > 1` fixed to `ifx > 1`, and `var x /* n */ int = 1` to `var xint = 1`,
+        // which still parses and so kept AC5 green while renaming a declaration.
         let start = if code_before {
             src[..block.span.start].trim_end_matches([' ', '\t']).len()
         } else {
             block.span.start
         };
-        let end = if code_after {
+        let end = if code_after && !code_before {
             block.span.end + src[block.span.end..].len()
                 - src[block.span.end..].trim_start_matches([' ', '\t']).len()
         } else {
