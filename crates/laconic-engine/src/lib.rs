@@ -7,6 +7,7 @@
 pub mod dispatch;
 pub mod domain;
 pub mod exclude;
+pub mod fix;
 pub mod pack;
 pub mod pipeline;
 pub mod registry;
@@ -20,6 +21,7 @@ pub use domain::{
     Visibility,
 };
 pub use exclude::Config;
+pub use fix::fix;
 pub use pack::{BlankLinePolicy, DocComment, Pack};
 pub use pipeline::{FileAnalysis, Skipped, analyse, resolve};
 pub use registry::{Dispatch, Disposition, ErrorPolicy, FixShape, Registry, RuleEntry, Tier};
