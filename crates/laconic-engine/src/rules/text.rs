@@ -5,6 +5,7 @@
 //! comment, and read `narration detected` and write a comment explaining that narration was
 //! detected.
 
+use crate::domain::Attachment;
 use crate::rule::{BlockContext, BlockRule, RuleHit};
 use crate::rules::matching::{first_match, normalise, strip_code_spans};
 
@@ -79,9 +80,15 @@ impl BlockRule for Banner {
 
     /// Matching is over the body from pack concern 7, never the raw line: a raw-line test misses
     /// `// =====` because the raw line begins with the comment marker.
+    ///
+    /// A trailing comment is never a label. It annotates the code on its line, where a section
+    /// label divides a file — and this rule ships autofix **on**, so the distinction is what stands
+    /// between `// ACTA, ELEKTRA, ALEA` beside a list of ids and `laconic fix` deleting the only
+    /// record of which id is which.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
         let body = ctx.block.body();
-        let reason = banner_reason(&body)?;
+        let labels_allowed = ctx.block.attachment != Attachment::AttachedTrailing;
+        let reason = banner_reason(&body, labels_allowed)?;
         Some(RuleHit::new(
             ctx.block.span.clone(),
             format!("remove this comment: it is {reason}, which carries no information"),
@@ -89,7 +96,15 @@ impl BlockRule for Banner {
     }
 }
 
-fn banner_reason(body: &str) -> Option<&'static str> {
+/// Whether `banner` would report this block — the precedence test `detached` applies.
+///
+/// Exposed rather than duplicated: a second copy of the predicate is a second thing to keep in step,
+/// and the two rules disagreeing is exactly the double-reporting this exists to stop.
+pub fn is_banner(body: &str, attachment: Attachment) -> bool {
+    banner_reason(body, attachment != Attachment::AttachedTrailing).is_some()
+}
+
+fn banner_reason(body: &str, labels_allowed: bool) -> Option<&'static str> {
     let lines: Vec<&str> = body
         .lines()
         .map(str::trim)
@@ -108,10 +123,34 @@ fn banner_reason(body: &str) -> Option<&'static str> {
     if lines.iter().all(|l| is_step_label(l)) {
         return Some("a step number");
     }
-    if lines.len() == 1 && is_section_label(lines[0]) {
+    if labels_allowed
+        && lines.len() == 1
+        && (is_section_label(lines[0]) || is_fenced_label(lines[0]))
+    {
         return Some("a section label");
     }
     None
+}
+
+/// A label fenced by rule characters on **both** sides — `--- helpers ---`, `=== Setup ===`,
+/// `--- XML element types (PIM Stammdaten format) ---`.
+///
+/// Case is not the test here, and that is the point: `is_section_label` reads all-caps as the signal
+/// and so missed 58 of 85 real banners in one corpus, every one of them a mixed-case label in
+/// dashes. Nobody writes prose wrapped in `---`, so the fence is the signal.
+///
+/// Both sides are required. A line that opens with a fence and then runs on — `--- Upsert variants,
+/// ported verbatim from pgloadv2` — is a heading with content after it, and content is what this
+/// rule must not delete.
+fn is_fenced_label(line: &str) -> bool {
+    let line = line.trim();
+    let fence =
+        |s: &mut dyn Iterator<Item = char>| s.take_while(|c| RULE_CHARS.contains(c)).count();
+    if fence(&mut line.chars()) < 3 || fence(&mut line.chars().rev()) < 3 {
+        return false;
+    }
+    let inner = line.trim_matches(|c: char| RULE_CHARS.contains(&c) || c.is_whitespace());
+    inner.chars().any(char::is_alphabetic)
 }
 
 /// `Step 3:` and `STEP 3 -`. A step number restates position, which the reader can already see.
@@ -318,27 +357,27 @@ mod tests {
 
     #[test]
     fn banner_matches_rules_steps_and_labels() {
-        assert!(banner_reason(" =====").is_some());
-        assert!(banner_reason(" ---------------").is_some());
-        assert!(banner_reason(" Step 1:").is_some());
-        assert!(banner_reason(" STEP 2 -").is_some());
-        assert!(banner_reason(" HELPERS").is_some());
-        assert!(banner_reason(" ---- SETUP ----").is_some());
+        assert!(banner_reason(" =====", true).is_some());
+        assert!(banner_reason(" ---------------", true).is_some());
+        assert!(banner_reason(" Step 1:", true).is_some());
+        assert!(banner_reason(" STEP 2 -", true).is_some());
+        assert!(banner_reason(" HELPERS", true).is_some());
+        assert!(banner_reason(" ---- SETUP ----", true).is_some());
     }
 
     #[test]
     fn banner_leaves_prose_and_task_markers_alone() {
-        assert!(banner_reason(" a real comment").is_none());
-        assert!(banner_reason(" -- but this is prose").is_none());
+        assert!(banner_reason(" a real comment", true).is_none());
+        assert!(banner_reason(" -- but this is prose", true).is_none());
         assert!(
-            banner_reason(" TODO").is_none(),
+            banner_reason(" TODO", true).is_none(),
             "task asks the other question"
         );
         assert!(
-            banner_reason(" --").is_none(),
+            banner_reason(" --", true).is_none(),
             "two characters is not a rule"
         );
-        assert!(banner_reason(" Step by step").is_none());
+        assert!(banner_reason(" Step by step", true).is_none());
     }
 
     #[test]
@@ -379,9 +418,9 @@ mod tests {
     /// instructions.
     #[test]
     fn a_decorated_task_marker_is_not_a_section_label() {
-        assert!(banner_reason(" -- TODO --").is_none());
-        assert!(banner_reason(" == FIXME ==").is_none());
-        assert!(banner_reason(" -- HELPERS --").is_some());
+        assert!(banner_reason(" -- TODO --", true).is_none());
+        assert!(banner_reason(" == FIXME ==", true).is_none());
+        assert!(banner_reason(" -- HELPERS --", true).is_some());
     }
 
     /// Two letters is a label; one is not. The boundary is the whole content of the rule.
