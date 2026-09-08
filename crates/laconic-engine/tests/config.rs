@@ -26,8 +26,8 @@ fn stating_the_defaults_changes_nothing() {
         density_max_ratio = 0.5
         "#,
     );
-    let (_, from_empty) = empty.resolve("go");
-    let (_, from_spelled) = spelled.resolve("go");
+    let from_empty = empty.resolve("go").thresholds;
+    let from_spelled = spelled.resolve("go").thresholds;
     assert_eq!(from_empty, from_spelled);
     assert_eq!(from_empty, Thresholds::default());
 }
@@ -116,8 +116,10 @@ fn a_language_override_reaches_one_language() {
     );
     config.validate(LANGUAGES).expect("valid");
 
-    let (go_rules, go) = config.resolve("go");
-    let (py_rules, py) = config.resolve("python");
+    let go_resolved = config.resolve("go");
+    let (go_rules, go) = (&go_resolved.registry, go_resolved.thresholds);
+    let py_resolved = config.resolve("python");
+    let (py_rules, py) = (&py_resolved.registry, py_resolved.thresholds);
 
     assert_eq!(go.absolute_doc_lines, 10, "global layer reaches go");
     assert_eq!(py.absolute_doc_lines, 20, "python's own layer wins");
@@ -128,15 +130,15 @@ fn a_language_override_reaches_one_language() {
     );
 
     let tier_of = |r: &laconic_engine::Registry| r.get("banner").unwrap().line.unwrap().tier;
-    assert_eq!(tier_of(&go_rules), Tier::Gate);
-    assert_eq!(tier_of(&py_rules), Tier::Warn);
+    assert_eq!(tier_of(go_rules), Tier::Gate);
+    assert_eq!(tier_of(py_rules), Tier::Warn);
 }
 
 /// Re-tiering leaves the fix shape alone, and does not switch a rule on for a kind it never ran on.
 #[test]
 fn re_tiering_does_not_change_applicability_or_fix_shape() {
     let config = parse("[rules.detached]\ntier = \"warn\"\n");
-    let (registry, _) = config.resolve("go");
+    let registry = config.resolve("go").registry;
     let entry = registry.get("detached").expect("detached exists");
     assert_eq!(entry.line.unwrap().tier, Tier::Warn);
     assert_eq!(

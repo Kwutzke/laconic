@@ -4,7 +4,7 @@
 //! broken file read as clean, which in a pre-commit hook on partial staging is silent.
 
 use laconic_engine::{
-    Config, Registry, Report, Rules, all_block_rules, all_subject_rules, analyse, dispatch, resolve,
+    Config, Report, Resolved, Rules, all_block_rules, all_subject_rules, analyse, dispatch, resolve,
 };
 use laconic_packs::all;
 use std::path::Path;
@@ -19,7 +19,7 @@ fn report_for(src: &str) -> Report {
         block: all_block_rules(),
         subject: all_subject_rules(),
     };
-    let (findings, note) = dispatch(path, src, &analysis, &Registry::default(), &rules);
+    let (findings, note) = dispatch(path, src, &analysis, &Resolved::default(), &rules);
     let mut report = Report {
         findings,
         withheld: note.into_iter().collect(),

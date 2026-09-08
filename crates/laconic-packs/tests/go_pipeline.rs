@@ -3,7 +3,7 @@
 use laconic_engine::domain::{Attachment, CommentKind, Visibility};
 use laconic_engine::{
     ABSOLUTE_DOC_LINES, Config, DENSITY_MIN_COMMENT_LINES, DOC_LINES_PER_MEMBER, FileAnalysis,
-    Finding, Registry, Rules, Skipped, all_block_rules, all_subject_rules, analyse, dispatch,
+    Finding, Resolved, Rules, Skipped, all_block_rules, all_subject_rules, analyse, dispatch,
     resolve,
 };
 use laconic_packs::all;
@@ -19,7 +19,7 @@ fn rules_fired(src: &str) -> Vec<&'static str> {
         block: all_block_rules(),
         subject: all_subject_rules(),
     };
-    let (findings, _) = dispatch(path, src, &analysis, &Registry::default(), &rules);
+    let (findings, _) = dispatch(path, src, &analysis, &Resolved::default(), &rules);
     findings.into_iter().map(|f| f.rule).collect()
 }
 
@@ -33,7 +33,7 @@ fn findings_for(src: &str) -> Vec<Finding> {
         block: all_block_rules(),
         subject: all_subject_rules(),
     };
-    dispatch(path, src, &analysis, &Registry::default(), &rules).0
+    dispatch(path, src, &analysis, &Resolved::default(), &rules).0
 }
 
 const SRC: &str = include_str!("../testdata/go/pipeline.go");

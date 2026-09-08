@@ -4,6 +4,7 @@
 //! Keeping those apart is what lets `narration` gate and delete a line comment while rewriting a
 //! doc comment at warn tier, without the rule knowing either number.
 
+use crate::config::Thresholds;
 use crate::domain::{CommentBlock, DeclaredSymbol, Subject};
 use laconic_grammars::Grammar;
 use std::ops::Range;
@@ -37,6 +38,11 @@ pub struct BlockContext<'a> {
     /// The grammar this file was parsed with, so `commentedOutCode` can parse a comment body in the
     /// file's own language. Opaque to the rule: it parses, it does not branch on which language.
     pub grammar: Grammar,
+    /// The numeric thresholds for **this file's language**, already narrowed by any override.
+    ///
+    /// Per file rather than per run, and that is the language-override mechanism rather than a
+    /// convenience: a threshold retuned for one pack is not a property of the run.
+    pub thresholds: Thresholds,
     pub src: &'a str,
 }
 
@@ -55,6 +61,8 @@ pub struct SubjectContext<'a> {
     /// denominator and no function any comments at all. The subject's own doc comment is excluded
     /// by `density` itself, since `docbloat` is the rule that measures that one.
     pub blocks: Vec<&'a CommentBlock>,
+    /// The thresholds for this file's language — see [`BlockContext::thresholds`].
+    pub thresholds: Thresholds,
 }
 
 /// `density` alone: an aggregate over every block attached to one subject, so its finding anchors

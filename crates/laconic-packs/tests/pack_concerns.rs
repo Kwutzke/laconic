@@ -5,7 +5,7 @@
 
 use laconic_engine::domain::{Attachment, CommentKind, Visibility};
 use laconic_engine::{
-    Config, FileAnalysis, Registry, Rules, all_block_rules, all_subject_rules, analyse, dispatch,
+    Config, FileAnalysis, Resolved, Rules, all_block_rules, all_subject_rules, analyse, dispatch,
     resolve,
 };
 use laconic_packs::all;
@@ -29,7 +29,7 @@ fn rules_fired(name: &str, src: &str) -> Vec<&'static str> {
         block: all_block_rules(),
         subject: all_subject_rules(),
     };
-    let (findings, _) = dispatch(path, src, &analysis, &Registry::default(), &rules);
+    let (findings, _) = dispatch(path, src, &analysis, &Resolved::default(), &rules);
     findings.into_iter().map(|f| f.rule).collect()
 }
 

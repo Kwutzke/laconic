@@ -5,6 +5,9 @@
 //! of its own.
 
 use crate::registry::{Registry, Tier};
+use crate::rules::structural::{
+    ABSOLUTE_DOC_LINES, DENSITY_MAX_RATIO, DENSITY_MIN_COMMENT_LINES, DOC_LINES_PER_MEMBER,
+};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -25,10 +28,30 @@ pub struct Thresholds {
 impl Default for Thresholds {
     fn default() -> Self {
         Self {
-            absolute_doc_lines: 6,
-            doc_lines_per_member: 3,
-            density_min_comment_lines: 8,
-            density_max_ratio: 0.5,
+            absolute_doc_lines: ABSOLUTE_DOC_LINES,
+            doc_lines_per_member: DOC_LINES_PER_MEMBER,
+            density_min_comment_lines: DENSITY_MIN_COMMENT_LINES,
+            density_max_ratio: DENSITY_MAX_RATIO,
+        }
+    }
+}
+
+/// What one file's language runs with: the registry and thresholds after that language's overrides.
+///
+/// One value rather than two parameters because the two are resolved together and are wrong apart —
+/// a caller holding a language's registry and the run's thresholds has silently dropped half of
+/// every override.
+#[derive(Debug, Clone, Default)]
+pub struct Resolved {
+    pub registry: Registry,
+    pub thresholds: Thresholds,
+}
+
+impl From<Registry> for Resolved {
+    fn from(registry: Registry) -> Self {
+        Self {
+            registry,
+            thresholds: Thresholds::default(),
         }
     }
 }
@@ -197,7 +220,7 @@ impl ConfigFile {
     ///
     /// Callers must validate first — an unknown id is silently skipped here, because reporting it
     /// per file would report it once per file.
-    pub fn resolve(&self, language: &str) -> (Registry, Thresholds) {
+    pub fn resolve(&self, language: &str) -> Resolved {
         let mut registry = Registry::default();
         let mut thresholds = self.thresholds.apply(Thresholds::default());
 
@@ -206,7 +229,10 @@ impl ConfigFile {
             thresholds = overrides.thresholds.apply(thresholds);
             apply_rules(&mut registry, &overrides.rules);
         }
-        (registry, thresholds)
+        Resolved {
+            registry,
+            thresholds,
+        }
     }
 
     /// The excluded-path set, replaced wholesale when the file states one.

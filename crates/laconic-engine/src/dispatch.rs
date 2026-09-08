@@ -5,6 +5,7 @@
 //! discarded, and only then can `deadIgnore` ask whether a named rule ran and did not fire, and
 //! `ignoreReason` report a directive carrying no reason.
 
+use crate::config::Resolved;
 use crate::domain::CommentKind;
 use crate::pipeline::FileAnalysis;
 use crate::registry::{Dispatch, Disposition, ErrorPolicy, FixShape, Registry};
@@ -34,9 +35,10 @@ pub fn dispatch(
     file: &Path,
     src: &str,
     analysis: &FileAnalysis,
-    registry: &Registry,
+    resolved: &Resolved,
     rules: &Rules,
 ) -> (Vec<Finding>, Option<WithheldNote>) {
+    let registry = &resolved.registry;
     let mut withheld: BTreeSet<&'static str> = BTreeSet::new();
     let mut pending: Vec<Pending> = Vec::new();
     // (block index, rule id) pairs that were evaluated. `deadIgnore` needs "ran and did not fire",
@@ -82,6 +84,7 @@ pub fn dispatch(
                 declared: &analysis.declared,
                 source_extensions: &analysis.source_extensions,
                 grammar: analysis.grammar,
+                thresholds: resolved.thresholds,
                 src,
             };
             if let Some(hit) = rule.check(&ctx) {
@@ -167,7 +170,11 @@ pub fn dispatch(
                     .unbound_directives
                     .iter()
                     .any(|d| d.rule == entry.id && d.start_row + 2 == subject_row);
-            let ctx = SubjectContext { subject, blocks };
+            let ctx = SubjectContext {
+                subject,
+                blocks,
+                thresholds: resolved.thresholds,
+            };
             if let Some(hit) = rule.check(&ctx) {
                 let mut finding = build(file, src, entry.id, disposition, hit);
                 // Recorded here rather than in reconcile, which matches a finding to its block's

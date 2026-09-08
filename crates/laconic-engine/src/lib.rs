@@ -16,7 +16,7 @@ pub mod report;
 pub mod rule;
 pub mod rules;
 
-pub use config::{ConfigError, ConfigFile, Thresholds};
+pub use config::{ConfigError, ConfigFile, Resolved, Thresholds};
 pub use dispatch::{Rules, dispatch, is_autofixable};
 pub use domain::{
     Attachment, Comment, CommentBlock, CommentKind, DeclaredSymbol, IgnoreDirective, Subject,

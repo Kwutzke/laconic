@@ -16,7 +16,7 @@
 use laconic_engine::domain::{CommentKind, DeclaredSymbol, Visibility};
 use laconic_engine::pack::{BlankLinePolicy, DocComment, Pack};
 use laconic_engine::{
-    Config, Registry, Rules, all_block_rules, all_subject_rules, analyse, dispatch, resolve,
+    Config, Resolved, Rules, all_block_rules, all_subject_rules, analyse, dispatch, resolve,
 };
 use laconic_grammars::Grammar;
 use laconic_packs::all;
@@ -136,7 +136,7 @@ fn findings_on(pack: &dyn Pack, ext: &str) -> Vec<String> {
         block: all_block_rules(),
         subject: all_subject_rules(),
     };
-    let (findings, _) = dispatch(path, src, &analysis, &Registry::default(), &rules);
+    let (findings, _) = dispatch(path, src, &analysis, &Resolved::default(), &rules);
     findings
         .into_iter()
         .filter(|f| !f.suppressed)

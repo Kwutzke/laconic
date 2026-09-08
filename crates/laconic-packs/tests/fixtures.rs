@@ -10,7 +10,7 @@
 //! affordance immediately. On a mismatch the runner prints the actual lines for a human to paste.
 
 use laconic_engine::{
-    Config, Registry, Report, Rules, all_block_rules, all_subject_rules, analyse, dispatch, resolve,
+    Config, Report, Resolved, Rules, all_block_rules, all_subject_rules, analyse, dispatch, resolve,
 };
 use laconic_packs::all;
 use std::fs;
@@ -34,7 +34,7 @@ fn actual(path: &Path) -> Vec<String> {
         block: all_block_rules(),
         subject: all_subject_rules(),
     };
-    let (findings, note) = dispatch(path, &src, &analysis, &Registry::default(), &rules);
+    let (findings, note) = dispatch(path, &src, &analysis, &Resolved::default(), &rules);
     let mut report = Report {
         findings,
         withheld: note.into_iter().collect(),
@@ -56,7 +56,7 @@ fn instructions(path: &Path) -> Vec<String> {
         block: all_block_rules(),
         subject: all_subject_rules(),
     };
-    let (findings, _) = dispatch(path, &src, &analysis, &Registry::default(), &rules);
+    let (findings, _) = dispatch(path, &src, &analysis, &Resolved::default(), &rules);
     findings.into_iter().map(|f| f.instruction).collect()
 }
 

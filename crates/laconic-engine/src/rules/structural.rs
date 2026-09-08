@@ -182,10 +182,11 @@ impl BlockRule for DocBloat {
         let subject = ctx.subject?;
         let lines = ctx.block.line_count();
         let members = subject.member_count;
-        let over_absolute = lines > ABSOLUTE_DOC_LINES;
+        let over_absolute = lines > ctx.thresholds.absolute_doc_lines;
         // `members > 0` is load-bearing beyond the arithmetic: it is what keeps `members_phrase(0)`
         // — "documenting 0 members" — off the relative arm below.
-        let over_relative = members > 0 && lines > members.saturating_mul(DOC_LINES_PER_MEMBER);
+        let over_relative =
+            members > 0 && lines > members.saturating_mul(ctx.thresholds.doc_lines_per_member);
         if !over_absolute && !over_relative {
             return None;
         }
@@ -274,7 +275,7 @@ impl SubjectRule for Density {
             .filter(|b| b.kind != CommentKind::Doc)
             .map(|b| b.line_count())
             .sum();
-        if comment_lines <= DENSITY_MIN_COMMENT_LINES {
+        if comment_lines <= ctx.thresholds.density_min_comment_lines {
             return None;
         }
         // A subject declaring no members has no denominator, and this rule is the ratio: unlike
@@ -284,7 +285,7 @@ impl SubjectRule for Density {
             return None;
         }
         let ratio = comment_lines as f64 / members as f64;
-        if ratio <= DENSITY_MAX_RATIO {
+        if ratio <= ctx.thresholds.density_max_ratio {
             return None;
         }
         Some(RuleHit::new(

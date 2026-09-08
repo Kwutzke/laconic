@@ -5,7 +5,8 @@
 //! idempotence, which catches a directive outliving its block and collapsing that eats a line a pass.
 
 use laconic_engine::{
-    Config, Registry, Rules, all_block_rules, all_subject_rules, analyse, dispatch, fix, resolve,
+    Config, Registry, Resolved, Rules, all_block_rules, all_subject_rules, analyse, dispatch, fix,
+    resolve,
 };
 use laconic_packs::all;
 use std::path::{Path, PathBuf};
@@ -42,7 +43,13 @@ fn fix_once(path: &Path, src: &str) -> Option<(String, bool)> {
         subject: all_subject_rules(),
     };
     let registry = Registry::default();
-    let (findings, _) = dispatch(path, src, &analysis, &registry, &rules);
+    let (findings, _) = dispatch(
+        path,
+        src,
+        &analysis,
+        &Resolved::from(registry.clone()),
+        &rules,
+    );
     let clean = !analysis.has_error_nodes;
     Some((fix(src, &analysis, &findings, &registry, pack), clean))
 }
@@ -115,7 +122,13 @@ fn fixed(name: &str, src: &str) -> String {
         subject: all_subject_rules(),
     };
     let registry = Registry::default();
-    let (findings, _) = dispatch(path, src, &analysis, &registry, &rules);
+    let (findings, _) = dispatch(
+        path,
+        src,
+        &analysis,
+        &Resolved::from(registry.clone()),
+        &rules,
+    );
     fix(src, &analysis, &findings, &registry, pack)
 }
 

@@ -7,7 +7,8 @@
 use laconic_engine::registry::{FixShape, Tier};
 use laconic_engine::rule::{BlockContext, BlockRule, RuleHit, SubjectContext, SubjectRule};
 use laconic_engine::{
-    Config, FileAnalysis, Registry, Report, Rules, analyse, dispatch, is_autofixable, resolve,
+    Config, FileAnalysis, Registry, Report, Resolved, Rules, analyse, dispatch, is_autofixable,
+    resolve,
 };
 use laconic_packs::all;
 use std::path::Path;
@@ -56,7 +57,13 @@ fn analysis(src: &str) -> (FileAnalysis, &'static str) {
 fn report_for(src: &str, rules: Rules) -> Report {
     let (a, name) = analysis(src);
     let registry = Registry::default();
-    let (findings, note) = dispatch(Path::new(name), src, &a, &registry, &rules);
+    let (findings, note) = dispatch(
+        Path::new(name),
+        src,
+        &a,
+        &Resolved::from(registry.clone()),
+        &rules,
+    );
     let mut report = Report {
         findings,
         withheld: note.into_iter().collect(),
@@ -320,7 +327,13 @@ fn a_disabled_rule_is_not_dispatched() {
     let (a, name) = analysis(NARRATION);
     let mut registry = Registry::default();
     registry.set_enabled("narration", false).unwrap();
-    let (findings, _) = dispatch(Path::new(name), NARRATION, &a, &registry, &narration_stub());
+    let (findings, _) = dispatch(
+        Path::new(name),
+        NARRATION,
+        &a,
+        &Resolved::from(registry.clone()),
+        &narration_stub(),
+    );
     assert!(findings.is_empty());
 }
 
