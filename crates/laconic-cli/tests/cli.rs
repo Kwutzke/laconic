@@ -1,0 +1,209 @@
+//! The command line as a caller meets it: exit codes, and what reaches stdout.
+//!
+//! Driven through the built binary rather than through `run()`, because the exit code is the
+//! contract and a function returning an integer is not evidence about a process.
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+
+/// A Go file with one gate finding: a rule of punctuation, which `banner` reports and `fix` takes.
+///
+/// Detached from the function on purpose. Adjacent to it the two comments group into one block,
+/// that block resolves as the function's doc comment, and `banner` on a doc comment is warn plus
+/// Rewrite — no gate and nothing to fix, which is the invariant rather than a quirk of the fixture.
+const BANNERED: &str = "package p\n\n// ==============\n\n// Add returns the sum.\nfunc Add(a, b int) int { return a + b }\n";
+
+/// The same file with nothing to say about it.
+const CLEAN: &str =
+    "package p\n\n// Add returns the sum.\nfunc Add(a, b int) int { return a + b }\n";
+
+struct Run {
+    code: i32,
+    stdout: String,
+    stderr: String,
+}
+
+fn laconic(dir: &Path, args: &[&str]) -> Run {
+    let output: Output = Command::new(env!("CARGO_BIN_EXE_laconic"))
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .expect("the binary runs");
+    Run {
+        code: output.status.code().expect("exited rather than signalled"),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }
+}
+
+#[test]
+fn a_gate_finding_exits_one_and_a_clean_tree_exits_zero() {
+    let dir = tempdir("gate");
+    write(&dir, "x.go", BANNERED);
+    let run = laconic(&dir, &["check", "--no-config"]);
+    assert_eq!(run.code, 1, "stdout was {}", run.stdout);
+    assert!(run.stdout.contains("banner"), "{}", run.stdout);
+
+    write(&dir, "x.go", CLEAN);
+    let run = laconic(&dir, &["check", "--no-config"]);
+    assert_eq!(run.code, 0, "stdout was {}", run.stdout);
+    assert_eq!(run.stdout, "");
+}
+
+/// An extension no pack claims produces nothing at all — not a warning, not a line.
+///
+/// laconic runs over whole repositories. A note per `.json` and `.md` is what makes the findings
+/// unreadable, so silence here is the behaviour rather than the absence of one.
+#[test]
+fn an_unclaimed_extension_is_silent() {
+    let dir = tempdir("unclaimed");
+    write(&dir, "data.json", "{\"//\": \"////////\"}\n");
+    write(&dir, "notes.md", "//////// not code\n");
+    let run = laconic(&dir, &["check", "--no-config"]);
+    assert_eq!(run.code, 0);
+    assert_eq!(run.stdout, "", "an unclaimed extension produced output");
+}
+
+/// A malformed config aborts before any file is read. The bannered file below would exit 1 on its
+/// own; exit 2 with no finding printed is what says nothing was read.
+#[test]
+fn a_malformed_config_exits_two_before_reading_anything() {
+    let dir = tempdir("malformed");
+    write(&dir, "x.go", BANNERED);
+    write(&dir, "laconic.toml", "[rules\n");
+    let run = laconic(&dir, &["check"]);
+    assert_eq!(run.code, 2, "stderr was {}", run.stderr);
+    assert_eq!(run.stdout, "", "a file was read despite the bad config");
+    assert!(run.stderr.contains("no files were read"), "{}", run.stderr);
+}
+
+/// An unknown rule id is the same abort: a config the tool half understands silently disables rules
+/// its author believed were on.
+#[test]
+fn an_unknown_rule_id_exits_two() {
+    let dir = tempdir("unknown-rule");
+    write(&dir, "x.go", BANNERED);
+    write(
+        &dir,
+        "laconic.toml",
+        "[rules.nosuchrule]\nenabled = false\n",
+    );
+    let run = laconic(&dir, &["check"]);
+    assert_eq!(run.code, 2, "stderr was {}", run.stderr);
+    assert_eq!(run.stdout, "");
+    assert!(run.stderr.contains("nosuchrule"), "{}", run.stderr);
+}
+
+/// And an override naming a language no pack claims.
+#[test]
+fn an_override_for_an_unclaimed_language_exits_two() {
+    let dir = tempdir("unknown-language");
+    write(&dir, "x.go", BANNERED);
+    write(
+        &dir,
+        "laconic.toml",
+        "[languages.cobol.rules.banner]\nenabled = false\n",
+    );
+    let run = laconic(&dir, &["check"]);
+    assert_eq!(run.code, 2, "stderr was {}", run.stderr);
+    assert!(run.stderr.contains("cobol"), "{}", run.stderr);
+}
+
+/// A usage error is the same class as a bad config: the run never started.
+#[test]
+fn an_unknown_command_exits_two() {
+    let dir = tempdir("usage");
+    assert_eq!(laconic(&dir, &["lint"]).code, 2);
+    assert_eq!(laconic(&dir, &[]).code, 2);
+    assert_eq!(laconic(&dir, &["check", "--nosuchflag"]).code, 2);
+}
+
+/// AC9, end to end: `laconic defaults` written to `laconic.toml` changes no finding.
+///
+/// The file states every rule and every threshold explicitly, so a value it got wrong would move a
+/// finding. Asserted through the binary rather than by comparing two registries, because AC9's
+/// claim is about a run.
+#[test]
+fn a_config_of_only_defaults_is_a_default_run() {
+    let dir = tempdir("defaults");
+    write(&dir, "x.go", BANNERED);
+    write(&dir, "long.go", &over_the_doc_cap());
+
+    let bare = laconic(&dir, &["check", "--no-config"]);
+    let defaults = laconic(&dir, &["defaults"]);
+    assert_eq!(defaults.code, 0);
+    write(&dir, "laconic.toml", &defaults.stdout);
+    let configured = laconic(&dir, &["check"]);
+
+    assert_eq!(configured.stdout, bare.stdout);
+    assert_eq!(configured.code, bare.code);
+    assert!(!bare.stdout.is_empty(), "the comparison found nothing");
+}
+
+/// Seven doc lines over a one-member struct: over the shipped cap and over the ratio, so the
+/// defaults file getting either threshold wrong would show up above.
+fn over_the_doc_cap() -> String {
+    let mut src = String::from("package p\n\n");
+    for i in 0..7 {
+        src.push_str(&format!(
+            "// Widget line {i} of prose that earns nothing.\n"
+        ));
+    }
+    src.push_str("type Widget struct {\n\tName string\n}\n");
+    src
+}
+
+/// `fix` rewrites the file and then reports what the file now says.
+#[test]
+fn fix_applies_the_autofixable_findings_and_reports_the_residue() {
+    let dir = tempdir("fix");
+    write(&dir, "x.go", BANNERED);
+    let run = laconic(&dir, &["fix", "--no-config"]);
+    assert_eq!(run.code, 0, "stdout was {}", run.stdout);
+
+    let after = std::fs::read_to_string(dir.join("x.go")).expect("read");
+    assert!(
+        !after.contains("=============="),
+        "the banner survived:\n{after}"
+    );
+    assert!(
+        after.contains("// Add returns the sum."),
+        "the fix took more than the banner:\n{after}"
+    );
+    assert!(run.stderr.contains("fixed"), "{}", run.stderr);
+}
+
+/// Excluded paths replace the default set rather than extending it.
+#[test]
+fn the_excluded_set_is_replaced() {
+    let dir = tempdir("excluded");
+    std::fs::create_dir_all(dir.join("testdata")).expect("mkdir");
+    std::fs::create_dir_all(dir.join("probe")).expect("mkdir");
+    write(&dir, "testdata/x.go", BANNERED);
+    write(&dir, "probe/y.go", BANNERED);
+
+    // Default set: `testdata` is excluded, `probe` is not.
+    let run = laconic(&dir, &["check", "--no-config"]);
+    assert!(run.stdout.contains("probe"), "{}", run.stdout);
+    assert!(!run.stdout.contains("testdata"), "{}", run.stdout);
+
+    write(&dir, "laconic.toml", "excluded_paths = [\"probe\"]\n");
+    let run = laconic(&dir, &["check"]);
+    assert!(
+        run.stdout.contains("testdata"),
+        "the list extended rather than replaced: {}",
+        run.stdout
+    );
+    assert!(!run.stdout.contains("probe"), "{}", run.stdout);
+}
+
+fn write(dir: &Path, name: &str, content: &str) {
+    std::fs::write(dir.join(name), content).expect("write");
+}
+
+fn tempdir(tag: &str) -> PathBuf {
+    let base = std::env::temp_dir().join(format!("laconic-cli-{}-{tag}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).expect("mkdir");
+    base
+}

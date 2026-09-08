@@ -1,7 +1,7 @@
 //! A threshold override reaches the rule that reads it, per language.
 //!
-//! `crates/laconic-engine/tests/config.rs` asserts what the file resolves to. This asserts the half
-//! that matters to a caller: that resolving it changes which findings a run produces, and that a
+//! The engine's own config suite asserts what the file resolves to. This asserts the half that
+//! matters to a caller: that resolving it changes which findings a run produces, and that a
 //! `[languages.python]` block does not quietly retune Go.
 
 use laconic_engine::{

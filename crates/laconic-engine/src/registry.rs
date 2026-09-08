@@ -72,7 +72,7 @@ pub enum ErrorPolicy {
     Conditional,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuleEntry {
     pub id: &'static str,
     /// The (tier, fix) pair each kind gets, or `None` where the rule does not apply.
@@ -271,7 +271,7 @@ pub fn default_rules() -> Vec<RuleEntry> {
     ]
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Registry {
     entries: Vec<RuleEntry>,
 }

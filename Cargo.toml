@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/laconic-grammars", "crates/laconic-engine", "crates/laconic-packs"]
+members = [
+    "crates/laconic-grammars",
+    "crates/laconic-engine",
+    "crates/laconic-packs",
+    "crates/laconic-cli",
+]
 
 [workspace.package]
 edition = "2024"
@@ -10,6 +15,7 @@ license = "MIT"
 [workspace.dependencies]
 laconic-grammars = { path = "crates/laconic-grammars" }
 laconic-engine = { path = "crates/laconic-engine" }
+laconic-packs = { path = "crates/laconic-packs" }
 tree-sitter = "=0.26.12"
 tree-sitter-go = "=0.25.0"
 tree-sitter-python = "=0.25.0"

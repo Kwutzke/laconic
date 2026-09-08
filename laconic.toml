@@ -1,0 +1,121 @@
+# laconic's configuration for laconic itself.
+#
+# Everything below the excluded paths is the shipped defaults, stated in full: this repository
+# retunes nothing, and the file is here to document what the defaults are and to carry the one
+# exclusion the engine cannot ship.
+#
+# `probe/` holds grammar fixtures where a detached comment exists in order to be a detached comment
+# and a rule of slashes exists to be a banner. Every finding in there is correct and none is
+# actionable. It is not a universal convention, so it does not belong in an engine default — which
+# is why `excluded_paths` replaces the default set rather than extending it, and why the four
+# defaults are restated here.
+excluded_paths = ["testdata", "fixtures", "vendor", "node_modules", "probe"]
+
+# laconic's shipped defaults, stated in full.
+#
+# A run with no laconic.toml behaves exactly as a run with this file: every value below is the
+# default it would have used anyway. Change one to change that rule for this repository; delete a
+# block to leave it alone.
+#
+# Each rule's comment gives the disposition every comment kind gets as tier/fix, or `-` where the
+# rule does not apply to that kind. A `tier` key re-tiers every kind the rule applies to; there is
+# no per-kind key, because a rule that treats a doc comment differently is the registry's ruling
+# and not a repository's.
+#
+# gate findings decide exit status: any unsuppressed one exits 1. A delete fix is the only shape
+# `laconic fix` applies, and only where autofix is on.
+
+# laconic's shipped defaults, stated in full.
+#
+# A run with no laconic.toml behaves exactly as a run with this file: every value below is the
+# default it would have used anyway. Change one to change that rule for this repository; delete a
+# block to leave it alone.
+#
+# Each rule's comment gives the disposition every comment kind gets as tier/fix, or `-` where the
+# rule does not apply to that kind. A `tier` key re-tiers every kind the rule applies to; there is
+# no per-kind key, because a rule that treats a doc comment differently is the registry's ruling
+# and not a repository's.
+#
+# gate findings decide exit status: any unsuppressed one exits 1. A delete fix is the only shape
+# `laconic fix` applies, and only where autofix is on.
+
+[thresholds]
+absolute_doc_lines = 6
+doc_lines_per_member = 3
+density_min_comment_lines = 8
+density_max_ratio = 0.5
+
+# line: gate/delete   block: gate/delete   doc: warn/rewrite
+[rules.narration]
+enabled = true
+autofix = true
+
+# line: gate/delete   block: gate/delete   doc: warn/rewrite
+[rules.banner]
+enabled = true
+autofix = true
+
+# line: gate/delete   block: gate/delete   doc: -
+[rules.restate]
+enabled = true
+autofix = false
+
+# line: gate/delete   block: gate/delete   doc: -
+[rules.commentedOutCode]
+enabled = true
+autofix = false
+
+# line: gate/delete   block: gate/delete   doc: -
+[rules.attribution]
+enabled = true
+autofix = false
+
+# line: gate/delete   block: gate/delete   doc: -
+[rules.detached]
+enabled = true
+autofix = false
+
+# line: gate/none   block: gate/none   doc: gate/none
+[rules.fileref]
+enabled = true
+autofix = false
+
+# line: gate/none   block: gate/none   doc: gate/none
+[rules.ignoreReason]
+enabled = true
+autofix = false
+
+# line: warn/rewrite   block: warn/rewrite   doc: -
+[rules.density]
+enabled = true
+autofix = false
+
+# line: -   block: -   doc: warn/rewrite
+[rules.docbloat]
+enabled = true
+autofix = false
+
+# line: -   block: -   doc: warn/rewrite
+[rules.implInInterface]
+enabled = true
+autofix = false
+
+# line: warn/rewrite   block: warn/rewrite   doc: warn/rewrite
+[rules.hedging]
+enabled = true
+autofix = false
+
+# line: warn/rewrite   block: warn/rewrite   doc: warn/rewrite
+[rules.vague]
+enabled = true
+autofix = false
+
+# line: warn/rewrite   block: warn/rewrite   doc: warn/rewrite
+[rules.task]
+enabled = true
+autofix = false
+
+# line: warn/rewrite   block: warn/rewrite   doc: warn/rewrite
+[rules.deadIgnore]
+enabled = true
+autofix = false

@@ -270,3 +270,70 @@ pub fn discover(start: &Path) -> Option<PathBuf> {
     }
     None
 }
+
+/// The defaults as a `laconic.toml` would state them, rendered from the registry rather than
+/// transcribed: a hand-written table of fifteen rules goes stale on the first re-tiering, in the
+/// one file whose whole job is telling a reader what the defaults are.
+///
+/// **Tier is documented per kind and settable only per rule**, because a rule's tier can differ by
+/// comment kind while a config's `tier` key re-tiers every kind at once.
+pub fn defaults_toml() -> String {
+    use crate::registry::default_rules;
+    use std::fmt::Write as _;
+
+    let t = Thresholds::default();
+    let mut out = String::new();
+    out.push_str(DEFAULTS_PREAMBLE);
+
+    let _ = writeln!(out, "[thresholds]");
+    let _ = writeln!(out, "absolute_doc_lines = {}", t.absolute_doc_lines);
+    let _ = writeln!(out, "doc_lines_per_member = {}", t.doc_lines_per_member);
+    let _ = writeln!(
+        out,
+        "density_min_comment_lines = {}",
+        t.density_min_comment_lines
+    );
+    let _ = writeln!(out, "density_max_ratio = {}", t.density_max_ratio);
+
+    for entry in default_rules() {
+        let _ = writeln!(
+            out,
+            "\n# line: {}   block: {}   doc: {}",
+            kind_str(entry.line),
+            kind_str(entry.block),
+            kind_str(entry.doc),
+        );
+        let _ = writeln!(out, "[rules.{}]", entry.id);
+        let _ = writeln!(out, "enabled = {}", entry.enabled);
+        let _ = writeln!(out, "autofix = {}", entry.autofix);
+    }
+    out
+}
+
+const DEFAULTS_PREAMBLE: &str = "\
+# laconic's shipped defaults, stated in full.
+#
+# A run with no laconic.toml behaves exactly as a run with this file: every value below is the
+# default it would have used anyway. Change one to change that rule for this repository; delete a
+# block to leave it alone.
+#
+# Each rule's comment gives the disposition every comment kind gets as tier/fix, or `-` where the
+# rule does not apply to that kind. A `tier` key re-tiers every kind the rule applies to; there is
+# no per-kind key, because a rule that treats a doc comment differently is the registry's ruling
+# and not a repository's.
+#
+# gate findings decide exit status: any unsuppressed one exits 1. A delete fix is the only shape
+# `laconic fix` applies, and only where autofix is on.
+
+";
+
+fn kind_str(disposition: Option<crate::registry::Disposition>) -> String {
+    match disposition {
+        Some(d) => format!(
+            "{}/{}",
+            crate::report::tier_str(d.tier),
+            crate::report::fix_str(d.fix)
+        ),
+        None => "-".to_string(),
+    }
+}

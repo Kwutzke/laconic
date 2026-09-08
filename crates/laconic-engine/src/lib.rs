@@ -15,8 +15,9 @@ pub mod registry;
 pub mod report;
 pub mod rule;
 pub mod rules;
+pub mod run;
 
-pub use config::{ConfigError, ConfigFile, Resolved, Thresholds};
+pub use config::{ConfigError, ConfigFile, Resolved, Thresholds, defaults_toml, discover};
 pub use dispatch::{Rules, dispatch, is_autofixable};
 pub use domain::{
     Attachment, Comment, CommentBlock, CommentKind, DeclaredSymbol, IgnoreDirective, Subject,
@@ -38,3 +39,4 @@ pub use rules::{
     all_block_rules, all_subject_rules, structural_block_rules, structural_subject_rules,
     text_rules,
 };
+pub use run::{Run, languages};
