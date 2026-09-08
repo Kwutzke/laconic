@@ -11,6 +11,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+mod since;
+
 const USAGE: &str = "\
 laconic — remove low-value comments deterministically, across languages
 
@@ -20,14 +22,17 @@ usage:
   laconic defaults            print the shipped defaults as a laconic.toml
 
 options:
+  --since REF                 scan the files changed since REF, whole; needs git
   --format human|machine      output shape (default: human)
   --config PATH               use this config file rather than discovering one
   --no-config                 run on the shipped defaults, ignoring any laconic.toml
   -h, --help                  this text
   --version                   the version of this binary
 
-With no PATH, laconic reads the current directory. Exit 2 means the run never started: a usage
-error, or a config laconic could not fully understand.
+With no PATH, laconic reads the current directory. `--since` selects the paths itself and cannot be
+combined with them; it reads the whole of every file changed since REF, anywhere in the repository.
+Exit 2 means the run never started: a usage error, a config laconic could not fully understand, or a
+`--since` with no git to answer it.
 ";
 
 fn main() -> ExitCode {
@@ -74,6 +79,7 @@ struct Args {
     paths: Vec<PathBuf>,
     format: Format,
     config: ConfigSource,
+    since: Option<String>,
 }
 
 enum ConfigSource {
@@ -94,7 +100,10 @@ fn run() -> Result<i32, String> {
             .map_err(|e| format!("laconic: {e}"))?;
         return Ok(EXIT_CLEAN);
     }
-    let args = parse(&argv)?;
+    let mut args = parse(&argv)?;
+    if let Some(reference) = &args.since {
+        args.paths = since::changed_files(reference)?;
+    }
 
     if let Command::Defaults = args.command {
         emit(&defaults_toml()).map_err(|e| format!("laconic: {e}"))?;
@@ -167,6 +176,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
     let mut paths = Vec::new();
     let mut format = Format::Human;
     let mut config = ConfigSource::Discover;
+    let mut since = None;
     while let Some(arg) = argv.next() {
         match arg.as_str() {
             "--format" => {
@@ -183,6 +193,12 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                     None => return Err("laconic: --config takes a path".to_string()),
                 }
             }
+            "--since" => {
+                since = match argv.next() {
+                    Some(reference) => Some(reference.clone()),
+                    None => return Err("laconic: --since takes a git ref".to_string()),
+                }
+            }
             "--no-config" => config = ConfigSource::None,
             // Any leading dash, not just two. A mistyped short flag used to fall through to the
             // path arm, and a path with no extension resolves no pack and is skipped in silence —
@@ -195,7 +211,12 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         }
     }
 
-    if paths.is_empty() {
+    // Rejected rather than intersected: both narrow the scan, so a caller passing the two together
+    // believes one of them does something it does not.
+    if since.is_some() && !paths.is_empty() {
+        return Err("laconic: --since selects the paths itself; do not also name them".to_string());
+    }
+    if since.is_none() && paths.is_empty() {
         paths.push(PathBuf::from("."));
     }
     Ok(Args {
@@ -203,5 +224,6 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         paths,
         format,
         config,
+        since,
     })
 }

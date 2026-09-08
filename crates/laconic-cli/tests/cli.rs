@@ -313,8 +313,107 @@ fn the_excluded_set_is_replaced() {
     assert!(!run.stdout.contains("probe"), "{}", run.stdout);
 }
 
+/// The break this catches is the one that makes `--since` worthless: a scope that quietly widens to
+/// the whole repository, or quietly narrows to nothing. Both exit 0 on a clean-looking run.
+#[test]
+fn since_reads_the_changed_files_whole_and_leaves_the_rest_alone() {
+    let dir = tempdir("since");
+    repo(&dir);
+    write(&dir, "untouched.go", BANNERED);
+    write(&dir, "changed.go", CLEAN);
+    vcs(&dir, &["add", "."]);
+    vcs(&dir, &["commit", "-m", "base"]);
+    let base = vcs(&dir, &["rev-parse", "HEAD"]).trim().to_string();
+
+    // Committed on top of the base, and carrying its finding on a line the second commit did not
+    // write — whole-file reporting is the only way it surfaces.
+    write(&dir, "changed.go", BANNERED);
+    vcs(&dir, &["commit", "-am", "touch changed.go"]);
+
+    let run = laconic(&dir, &["check", "--no-config", "--since", &base]);
+    assert_eq!(run.code, 1, "stdout was {}", run.stdout);
+    assert!(run.stdout.contains("changed.go"), "{}", run.stdout);
+    assert!(
+        !run.stdout.contains("untouched.go"),
+        "a file the branch never touched was scanned: {}",
+        run.stdout
+    );
+}
+
+/// Untracked files are in scope. Left out, a hook reports nothing on the commonest state there is —
+/// a new file written this session and not yet added.
+#[test]
+fn since_covers_files_that_are_not_tracked_yet() {
+    let dir = tempdir("since-untracked");
+    repo(&dir);
+    write(&dir, "seed.go", CLEAN);
+    vcs(&dir, &["add", "."]);
+    vcs(&dir, &["commit", "-m", "base"]);
+    let base = vcs(&dir, &["rev-parse", "HEAD"]).trim().to_string();
+
+    write(&dir, "fresh.go", BANNERED);
+    let run = laconic(&dir, &["check", "--no-config", "--since", &base]);
+    assert_eq!(run.code, 1, "stdout was {}", run.stdout);
+    assert!(run.stdout.contains("fresh.go"), "{}", run.stdout);
+}
+
+/// A ref that does not resolve must exit 2, not 0. An empty diff from a typo is indistinguishable
+/// from a clean branch, which is the failure mode that would let a broken hook report success.
+#[test]
+fn since_exits_two_on_a_ref_that_does_not_resolve() {
+    let dir = tempdir("since-badref");
+    repo(&dir);
+    write(&dir, "x.go", CLEAN);
+    vcs(&dir, &["add", "."]);
+    vcs(&dir, &["commit", "-m", "base"]);
+
+    let run = laconic(&dir, &["check", "--no-config", "--since", "nosuchref"]);
+    assert_eq!(run.code, 2, "stdout was {}", run.stdout);
+    assert!(run.stderr.contains("nosuchref"), "{}", run.stderr);
+}
+
+#[test]
+fn since_outside_a_repository_exits_two() {
+    let dir = tempdir("since-norepo");
+    write(&dir, "x.go", BANNERED);
+    let run = laconic(&dir, &["check", "--no-config", "--since", "HEAD"]);
+    assert_eq!(run.code, 2, "stdout was {}", run.stdout);
+}
+
+#[test]
+fn since_and_named_paths_together_exit_two() {
+    let dir = tempdir("since-both");
+    repo(&dir);
+    let run = laconic(&dir, &["check", "--no-config", "--since", "HEAD", "."]);
+    assert_eq!(run.code, 2, "stdout was {}", run.stdout);
+}
+
 fn write(dir: &Path, name: &str, content: &str) {
     std::fs::write(dir.join(name), content).expect("write");
+}
+
+/// Identity and hooks are set per repository rather than read from the machine, so the suite passes
+/// on a host with no git identity and cannot fire a developer's own hooks.
+fn repo(dir: &Path) {
+    vcs(dir, &["init", "--initial-branch=main"]);
+    vcs(dir, &["config", "user.email", "laconic@example.invalid"]);
+    vcs(dir, &["config", "user.name", "laconic tests"]);
+    vcs(dir, &["config", "commit.gpgsign", "false"]);
+    vcs(dir, &["config", "core.hooksPath", "/dev/null"]);
+}
+
+fn vcs(dir: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .expect("git runs");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
 fn tempdir(tag: &str) -> PathBuf {
