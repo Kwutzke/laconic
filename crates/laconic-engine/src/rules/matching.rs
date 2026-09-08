@@ -79,9 +79,21 @@ pub fn contains_at_word_boundary(haystack: &str, needle: &str) -> bool {
 
 /// Words in a comment body, lowercased and stripped of surrounding punctuation.
 pub fn words(body: &str) -> Vec<String> {
+    cased_words(body)
+        .into_iter()
+        .map(|w| w.to_lowercase())
+        .collect()
+}
+
+/// The same split, with case preserved.
+///
+/// `implInInterface` needs this and the other rules do not: it compares a comment's words against
+/// declared identifiers, where case is the difference between an exported symbol and its unexported
+/// twin. Every other rule matches prose against prose, where case carries nothing.
+pub fn cased_words(body: &str) -> Vec<String> {
     body.split(|c: char| !is_word(c))
         .filter(|w| !w.is_empty())
-        .map(str::to_lowercase)
+        .map(str::to_string)
         .collect()
 }
 

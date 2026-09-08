@@ -700,3 +700,44 @@ fn the_cap_alone_names_no_denominator() {
         "a subject with no members has no denominator to name: {message}"
     );
 }
+
+/// `implInInterface` matches identifiers case-sensitively, so godoc's own convention is not a
+/// finding.
+///
+/// Go pairs an exported symbol with an unexported helper of the same name constantly —
+/// `GetStocks`/`getStocks`, `BuildSearchInfos`/`buildSearchInfos` — and godoc asks that a doc
+/// comment open with the exported name. Matched case-insensitively every such pair fired forever,
+/// and the only way to satisfy the rule was to write the doc comment without its own subject's name.
+///
+/// Measured on the backend corpus: 36 of 74 findings were this shape.
+#[test]
+fn the_exported_twin_of_a_private_helper_is_not_a_leak() {
+    let src = "package x\n\
+        \n\
+        // BuildSearchInfos builds a sorted search string from the order's articles.\n\
+        func BuildSearchInfos() string { return buildSearchInfos() }\n\
+        \n\
+        func buildSearchInfos() string { return \"\" }\n";
+    assert!(
+        !rules_fired(src).contains(&"implInInterface"),
+        "godoc's own convention reported as a leak"
+    );
+}
+
+/// The other half of the same change: an exact-case reference still fires.
+///
+/// Case-sensitivity narrows what the rule matches, so the narrowing has to be shown not to have
+/// taken the rule's actual subject with it.
+#[test]
+fn naming_the_private_helper_exactly_is_still_a_leak() {
+    let src = "package x\n\
+        \n\
+        // BuildSearchInfos is a thin wrapper; buildSearchInfos does the real work.\n\
+        func BuildSearchInfos() string { return buildSearchInfos() }\n\
+        \n\
+        func buildSearchInfos() string { return \"\" }\n";
+    assert!(
+        rules_fired(src).contains(&"implInInterface"),
+        "an exact-case reference to an unexported symbol stopped firing"
+    );
+}

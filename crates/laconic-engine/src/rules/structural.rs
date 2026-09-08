@@ -236,11 +236,11 @@ impl BlockRule for ImplInInterface {
         if !subject.visibility.is_exported() {
             return None;
         }
-        let body = words(&ctx.block.body());
+        let body = crate::rules::matching::cased_words(&ctx.block.body());
         let leaked = ctx.declared.iter().find(|d| {
             !d.visibility.is_exported()
                 && d.name.chars().count() >= MIN_SYMBOL_LEN
-                && body.contains(&d.name.to_lowercase())
+                && body.contains(&d.name.to_string())
         })?;
         Some(RuleHit::new(
             ctx.block.span.clone(),
