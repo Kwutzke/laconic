@@ -11,26 +11,21 @@ Delete without re-deriving the range from the instruction text.
 
 ## The pre-commit hook
 
+`hooks/pre-commit` is kept as the reference implementation of the staged-diff check — the logic a
+global hook needs, in the smallest form that runs. There is no installer: laconic is moving to a
+Claude Code hook installed through werkbank, and a per-repository git hook with its own install path
+was a second way to do the same thing, with its own failure modes.
+
+To use it as a git hook anyway, copy it into the repository's hook directory yourself:
+
 ```sh
 cargo build -p laconic-cli
-hooks/install.sh
+cp hooks/pre-commit "$(git rev-parse --git-common-dir)/hooks/pre-commit"
+chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-commit"
 ```
 
-`hooks/install.sh` **copies** `hooks/pre-commit` into the repository's hook directory, removing
-whatever is there first — `cp` alone writes *through* a symlink, which would leave an older
-link-based install in place while reporting success. It installs one file and can be run from
-anywhere in the repository.
-
-It refuses to overwrite a hook that is not laconic's, and decides that by the `# laconic-hook:`
-marker rather than by comparing content: editing `hooks/pre-commit` is precisely what makes the
-content differ, so a content check refused the re-install that the edit calls for.
-
-**A copy rather than a symlink, and re-run it after editing the hook.** The hook directory is shared
-by the main checkout and every worktree, while the source file belongs to whichever tree ran the
-installer. A link into a worktree dies with `git worktree remove`, and git tests a hook with
-`access(X_OK)` — which fails on a dangling link exactly as on a missing file, so every commit
-everywhere would silently run no hook. Linking to the main checkout's copy is the other durable
-answer and is not available while `hooks/` lives on a feature branch.
+`--git-common-dir`, not `--git-dir`: in a worktree the two differ, and hooks live in the common one.
+Resolve it from the repository root, since it can be printed as a relative path.
 
 **It does not set `core.hooksPath`.** That setting replaces `.git/hooks` wholesale, so it would
 silently disable every hook installed there by anything else — this repository already has a

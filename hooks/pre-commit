@@ -6,8 +6,9 @@
 # how a hook gets turned off. Every staged file is written into a temporary tree at its repository
 # path, so exclusions and language resolution see the paths they would see in a real run.
 #
-# Install: hooks/install.sh, which symlinks this file alone. Do not set core.hooksPath — it replaces
-# .git/hooks wholesale and would silently disable every other hook the repository has.
+# Copy it into the repository's hook directory to use it as one; docs/integrations.md has the
+# command. Do not set core.hooksPath — it replaces .git/hooks wholesale and would silently disable
+# every other hook the repository has.
 set -eu
 
 root=$(git rev-parse --show-toplevel)
