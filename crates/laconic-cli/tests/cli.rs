@@ -64,6 +64,32 @@ fn an_unclaimed_extension_is_silent() {
     assert_eq!(run.stdout, "", "an unclaimed extension produced output");
 }
 
+/// A file laconic cannot read is named, and the run carries on over the rest.
+///
+/// The opposite of the config aborts above, deliberately: a file is data and a config is
+/// instructions. So this reports per file rather than stopping, and the finding on the file beside
+/// it still has to appear.
+#[test]
+fn an_unreadable_file_is_reported_and_the_run_continues() {
+    let dir = tempdir("unreadable");
+    write(&dir, "good.go", BANNERED);
+    // Not UTF-8, and a `.go` file, so a pack claims it and the read is what fails.
+    std::fs::write(dir.join("bad.go"), [0x70, 0x6b, 0x67, 0xff, 0xfe, 0x0a]).expect("write");
+
+    let run = laconic(&dir, &["check", "--no-config"]);
+    assert!(run.stdout.contains("bad.go"), "{}", run.stdout);
+    assert!(run.stdout.contains("not read"), "{}", run.stdout);
+    assert!(
+        run.stdout.contains("banner"),
+        "the run stopped at the unreadable file: {}",
+        run.stdout
+    );
+    assert_eq!(
+        run.code, 1,
+        "the exit code is the gate finding's, not the unreadable file's"
+    );
+}
+
 /// A malformed config aborts before any file is read. The bannered file below would exit 1 on its
 /// own; exit 2 with no finding printed is what says nothing was read.
 #[test]
