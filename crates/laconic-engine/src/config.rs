@@ -313,9 +313,10 @@ pub fn defaults_toml() -> String {
 const DEFAULTS_PREAMBLE: &str = "\
 # laconic's shipped defaults, stated in full.
 #
-# A run with no laconic.toml behaves exactly as a run with this file: every value below is the
-# default it would have used anyway. Change one to change that rule for this repository; delete a
-# block to leave it alone.
+# Every value below is the default laconic would have used anyway, so a run against this section
+# alone is a run with no laconic.toml at all. Change one to change that rule for this repository;
+# delete a block to leave it alone. Anything a file adds *outside* this section — an
+# `excluded_paths` list, a `[languages.…]` block — is a real change, and the identity stops there.
 #
 # Each rule's comment gives the disposition every comment kind gets as tier/fix, or `-` where the
 # rule does not apply to that kind. A `tier` key re-tiers every kind the rule applies to; there is

@@ -16,8 +16,16 @@ cargo build -p laconic-cli
 hooks/install.sh
 ```
 
-`hooks/install.sh` symlinks `hooks/pre-commit` into the repository's hook directory. It installs one
-file and refuses to overwrite a pre-commit hook it did not write.
+`hooks/install.sh` **copies** `hooks/pre-commit` into the repository's hook directory. It installs
+one file and refuses to overwrite a pre-commit hook whose content differs from the one it installs.
+It can be run from anywhere in the repository.
+
+**A copy rather than a symlink, and re-run it after editing the hook.** The hook directory is shared
+by the main checkout and every worktree, while the source file belongs to whichever tree ran the
+installer. A link into a worktree dies with `git worktree remove`, and git tests a hook with
+`access(X_OK)` — which fails on a dangling link exactly as on a missing file, so every commit
+everywhere would silently run no hook. Linking to the main checkout's copy is the other durable
+answer and is not available while `hooks/` lives on a feature branch.
 
 **It does not set `core.hooksPath`.** That setting replaces `.git/hooks` wholesale, so it would
 silently disable every hook installed there by anything else — this repository already has a
@@ -70,8 +78,12 @@ the two exclusions the engine cannot ship as universal:
 
 - `probe/`, grammar fixtures where a detached comment exists in order to be a detached comment.
   Every finding in there is correct and none is actionable. It is 26 of the 69 findings a default
-  run reports on `crates/`, and it is the reason `excluded_paths` replaces the default set rather
-  than extending it.
+  run reports on `crates/`.
 - `target/`, so that `laconic check .` at the repository root means what it looks like it means.
+
+Both are *additions* to the four shipped defaults, which is why the file restates all six. Replacing
+rather than extending is required for the opposite case — **removing** a default — and the fixture
+suite is what needs it: every fixture lives under `testdata/`, a shipped exclusion, so the suite runs
+with the list cleared and would otherwise scan nothing at all.
 
 Regenerate the defaults section with `laconic defaults` after any change to the registry.

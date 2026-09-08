@@ -54,8 +54,9 @@ fn block_at<'a>(analysis: &'a FileAnalysis, span: &Range<usize>) -> Option<&'a C
 /// have manufactured.
 ///
 /// The two sides are separate questions and were not always asked as one. `trailing` answers the
-/// first: `pipeline.rs` sets it from the text *before* the comment on its opening line. Nothing
-/// asked about the text after it, so a block comment that opens a line and has code after it —
+/// first, and `has_code_before` is what sets it — from the text *before* the comment on its opening
+/// line. Nothing asked about the text after it, so a block comment that opens a line and has code
+/// after it —
 /// `/* ---- helpers ---- */ func f() {}`, which `banner` reports at gate tier with autofix on —
 /// fell to the whole-line branch and `laconic fix` deleted the declaration. Nothing caught it:
 /// the residue parses, and a second pass is a no-op, so both AC5 and AC6 stayed green.

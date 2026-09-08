@@ -1,38 +1,28 @@
 # laconic's configuration for laconic itself.
 #
-# Everything below the excluded paths is the shipped defaults, stated in full: this repository
-# retunes nothing, and the file is here to document what the defaults are and to carry the two
-# exclusions the engine cannot ship.
+# Two exclusions, then the shipped defaults stated in full. This repository retunes nothing: the
+# defaults section documents what the defaults are, and is regenerated with `laconic defaults`
+# after any change to the registry — replacing everything below this block, never prepended to it.
 #
 # `probe/` holds grammar fixtures where a detached comment exists in order to be a detached comment
 # and a rule of slashes exists to be a banner. Every finding in there is correct and none is
-# actionable. It is not a universal convention, so it does not belong in an engine default — which
-# is why `excluded_paths` replaces the default set rather than extending it, and why the four
-# defaults are restated here.
+# actionable. It is not a universal convention, so it does not belong in an engine default.
 #
 # `target` is here so that `laconic check .` at the repository root means what it looks like it
 # means. Build output holds generated Rust nobody wrote and nobody will edit.
+#
+# Both are *additions*, so all six entries are restated: the list replaces the shipped four rather
+# than extending them. Replacement exists for the opposite case — removing a default — which is
+# what the fixture suite needs, since every fixture lives under `testdata/` and the suite runs with
+# this list cleared.
 excluded_paths = ["testdata", "fixtures", "vendor", "node_modules", "probe", "target"]
 
 # laconic's shipped defaults, stated in full.
 #
-# A run with no laconic.toml behaves exactly as a run with this file: every value below is the
-# default it would have used anyway. Change one to change that rule for this repository; delete a
-# block to leave it alone.
-#
-# Each rule's comment gives the disposition every comment kind gets as tier/fix, or `-` where the
-# rule does not apply to that kind. A `tier` key re-tiers every kind the rule applies to; there is
-# no per-kind key, because a rule that treats a doc comment differently is the registry's ruling
-# and not a repository's.
-#
-# gate findings decide exit status: any unsuppressed one exits 1. A delete fix is the only shape
-# `laconic fix` applies, and only where autofix is on.
-
-# laconic's shipped defaults, stated in full.
-#
-# A run with no laconic.toml behaves exactly as a run with this file: every value below is the
-# default it would have used anyway. Change one to change that rule for this repository; delete a
-# block to leave it alone.
+# Every value below is the default laconic would have used anyway, so a run against this section
+# alone is a run with no laconic.toml at all. Change one to change that rule for this repository;
+# delete a block to leave it alone. Anything a file adds *outside* this section — an
+# `excluded_paths` list, a `[languages.…]` block — is a real change, and the identity stops there.
 #
 # Each rule's comment gives the disposition every comment kind gets as tier/fix, or `-` where the
 # rule does not apply to that kind. A `tier` key re-tiers every kind the rule applies to; there is

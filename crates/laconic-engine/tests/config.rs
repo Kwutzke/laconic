@@ -157,7 +157,9 @@ fn re_tiering_does_not_change_applicability_or_fix_shape() {
     );
 }
 
-/// The excluded set replaces, rather than extends — `probe/` is the case that needs it.
+/// The excluded set replaces rather than extends, which is what lets a caller **remove** a shipped
+/// default. The fixture suite is the case that needs it: every fixture lives under `testdata/`, so
+/// it runs with the list cleared. Adding `probe/` is extension and would not have required this.
 #[test]
 fn the_excluded_set_is_replaced_not_extended() {
     let config = parse("excluded_paths = [\"probe\", \"vendor\"]\n");
