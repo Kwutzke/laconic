@@ -312,10 +312,17 @@ impl BlockRule for FileRef {
         let body = ctx.block.body();
         let path = words_with_punctuation(&body)
             .into_iter()
-            .find(|w| looks_like_source_path(w, ctx.source_extensions))?;
+            .find_map(|w| source_path(w, ctx.source_extensions))?;
         Some(RuleHit::new(
             ctx.block.span.clone(),
-            format!("reference a symbol, not a file: replace \"{path}\" with the name it defines"),
+            // Two actions rather than one, because a single one is unfollowable in two of the three
+            // shapes this fires on. The comment often names the symbol already — "the SAP mock
+            // fixtures (fixtures.go Stock map)" — and then the repair is to drop the path and keep
+            // the name; a reference with no single symbol behind it has no name to be replaced with
+            // at all, and deleting it is the only move left.
+            format!(
+                "replace the path \"{path}\" with the symbol it refers to, or delete the reference: a path goes stale on the first rename and a reader cannot follow it"
+            ),
         ))
     }
 }
@@ -327,14 +334,25 @@ fn words_with_punctuation(body: &str) -> Vec<&str> {
     body.split_whitespace().collect()
 }
 
-fn looks_like_source_path(word: &str, extensions: &[&'static str]) -> bool {
+/// The path a word carries, trimmed of the punctuation prose puts around it.
+///
+/// **Returns the trimmed candidate rather than reporting the raw word**, which is what the
+/// instruction then quotes. Reporting the word gave `"(fixtures.go"` and `"stages_v3.go)."` —
+/// strings that do not appear in the comment as written, told to an agent instructed to replace
+/// them literally. That was 73 of the corpus's 121 findings.
+fn source_path<'w>(word: &'w str, extensions: &[&'static str]) -> Option<&'w str> {
     // Every punctuation mark that can sit against a path in prose, on either side: quotes and
     // brackets open as well as close.
     let candidate = word.trim_matches(['.', '(', ')', '[', ']', ':', ',', ';', '"', '\'', '`']);
-    let Some((stem, ext)) = candidate.rsplit_once('.') else {
-        return false;
-    };
-    !stem.is_empty() && extensions.contains(&ext)
+    // A path inside a URL is a link to something outside this repository — commonly the upstream
+    // source a file was adapted from. No symbol here replaces it, so the rule's own instruction
+    // cannot be followed, and the reference is the useful kind: it does not go stale on a local
+    // rename because it does not point at this tree.
+    if candidate.contains("://") {
+        return None;
+    }
+    let (stem, ext) = candidate.rsplit_once('.')?;
+    (!stem.is_empty() && extensions.contains(&ext)).then_some(candidate)
 }
 
 /// The seven rules whose whole input is the comment body.
@@ -402,11 +420,38 @@ mod tests {
 
     #[test]
     fn fileref_needs_an_extension_the_pack_claims() {
-        assert!(looks_like_source_path("parser.go", &["go"]));
-        assert!(looks_like_source_path("internal/parser.go,", &["go"]));
-        assert!(!looks_like_source_path("parser.go", &["rs"]));
-        assert!(!looks_like_source_path("e.g.", &["go"]));
-        assert!(!looks_like_source_path("config.json", &["go"]));
+        assert!(source_path("parser.go", &["go"]).is_some());
+        assert!(source_path("internal/parser.go,", &["go"]).is_some());
+        assert!(source_path("parser.go", &["rs"]).is_none());
+        assert!(source_path("e.g.", &["go"]).is_none());
+        assert!(source_path("config.json", &["go"]).is_none());
+    }
+
+    /// The reported path is what the comment actually contains, because the instruction quotes it
+    /// and an agent is told to replace that string literally.
+    #[test]
+    fn the_reported_path_carries_no_surrounding_punctuation() {
+        assert_eq!(source_path("(fixtures.go", &["go"]), Some("fixtures.go"));
+        assert_eq!(source_path("stages_v3.go).", &["go"]), Some("stages_v3.go"));
+        assert_eq!(
+            source_path("`internal/parser.go`", &["go"]),
+            Some("internal/parser.go")
+        );
+    }
+
+    /// A path inside a URL points outside this repository, so no symbol here replaces it and a
+    /// local rename cannot break it.
+    #[test]
+    fn a_url_is_not_a_file_reference() {
+        assert!(
+            source_path(
+                "https://github.com/labstack/echo/blob/master/middleware/secure.go",
+                &["go"]
+            )
+            .is_none()
+        );
+        // The bare path is still one, so the carve-out is the URL and not the filename.
+        assert!(source_path("middleware/secure.go", &["go"]).is_some());
     }
 
     /// Pins a `cargo mutants` survivor; each says so on itself, since a doc claiming a *range* is
