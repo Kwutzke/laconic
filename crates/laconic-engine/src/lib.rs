@@ -4,6 +4,7 @@
 //! a pack, not touching the engine — charter constraint 4 — and what protects that is the pack
 //! interface being enumerated and the trait being open, not a claim that languages are similar.
 
+pub mod config;
 pub mod dispatch;
 pub mod domain;
 pub mod exclude;
@@ -15,6 +16,7 @@ pub mod report;
 pub mod rule;
 pub mod rules;
 
+pub use config::{ConfigError, ConfigFile, Thresholds};
 pub use dispatch::{Rules, dispatch, is_autofixable};
 pub use domain::{
     Attachment, Comment, CommentBlock, CommentKind, DeclaredSymbol, IgnoreDirective, Subject,

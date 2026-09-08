@@ -1,0 +1,246 @@
+//! `laconic.toml`: the file, its validation, and the per-language view a run resolves from it.
+//!
+//! Every error here aborts before a single file is read. A config the tool half understands
+//! silently disables rules its author believed were on, which is the one failure worth an exit code
+//! of its own.
+
+use crate::registry::{Registry, Tier};
+use serde::Deserialize;
+use std::collections::BTreeMap;
+use std::fmt;
+use std::path::{Path, PathBuf};
+
+/// The four numeric thresholds, and the reason they are a struct rather than constants.
+///
+/// A language override can retune one for a single pack, so a threshold is a function of the file's
+/// language and cannot be resolved once for the run.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Thresholds {
+    pub absolute_doc_lines: usize,
+    pub doc_lines_per_member: usize,
+    pub density_min_comment_lines: usize,
+    pub density_max_ratio: f64,
+}
+
+impl Default for Thresholds {
+    fn default() -> Self {
+        Self {
+            absolute_doc_lines: 6,
+            doc_lines_per_member: 3,
+            density_min_comment_lines: 8,
+            density_max_ratio: 0.5,
+        }
+    }
+}
+
+/// What one `[rules.<id>]` table may say.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuleConfig {
+    pub enabled: Option<bool>,
+    pub tier: Option<TierName>,
+    pub autofix: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TierName {
+    Gate,
+    Warn,
+}
+
+impl From<TierName> for Tier {
+    fn from(name: TierName) -> Self {
+        match name {
+            TierName::Gate => Tier::Gate,
+            TierName::Warn => Tier::Warn,
+        }
+    }
+}
+
+/// Thresholds as the file may state them: each optional, so an unset one keeps its default rather
+/// than resetting to zero.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThresholdConfig {
+    pub absolute_doc_lines: Option<usize>,
+    pub doc_lines_per_member: Option<usize>,
+    pub density_min_comment_lines: Option<usize>,
+    pub density_max_ratio: Option<f64>,
+}
+
+impl ThresholdConfig {
+    fn apply(&self, base: Thresholds) -> Thresholds {
+        Thresholds {
+            absolute_doc_lines: self.absolute_doc_lines.unwrap_or(base.absolute_doc_lines),
+            doc_lines_per_member: self
+                .doc_lines_per_member
+                .unwrap_or(base.doc_lines_per_member),
+            density_min_comment_lines: self
+                .density_min_comment_lines
+                .unwrap_or(base.density_min_comment_lines),
+            density_max_ratio: self.density_max_ratio.unwrap_or(base.density_max_ratio),
+        }
+    }
+}
+
+/// A per-language block: the same knobs, scoped to one pack.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LanguageConfig {
+    #[serde(default)]
+    pub rules: BTreeMap<String, RuleConfig>,
+    #[serde(default)]
+    pub thresholds: ThresholdConfig,
+}
+
+/// `laconic.toml` as written.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigFile {
+    /// Replaces the default set rather than extending it — the fixture suite lives under a default
+    /// exclusion, so extension alone would leave it unable to scan itself.
+    pub excluded_paths: Option<Vec<String>>,
+    #[serde(default)]
+    pub rules: BTreeMap<String, RuleConfig>,
+    #[serde(default)]
+    pub thresholds: ThresholdConfig,
+    /// Keyed by pack name. A key no pack claims is an error, not a no-op.
+    #[serde(default)]
+    pub languages: BTreeMap<String, LanguageConfig>,
+}
+
+/// Why a run stopped before reading any file. Every variant exits 2.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigError {
+    Unreadable { path: PathBuf, message: String },
+    Malformed { path: PathBuf, message: String },
+    UnknownRule { id: String, scope: String },
+    UnknownLanguage { name: String },
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unreadable { path, message } => {
+                write!(f, "{}: cannot be read: {message}", path.display())
+            }
+            Self::Malformed { path, message } => {
+                write!(f, "{}: {message}", path.display())
+            }
+            Self::UnknownRule { id, scope } => write!(
+                f,
+                "unknown rule {id:?} in {scope} — remove it or correct the id"
+            ),
+            Self::UnknownLanguage { name } => write!(
+                f,
+                "no pack claims language {name:?} — remove the override or correct the name"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
+impl ConfigFile {
+    /// Parse one file. Absent is not this function's business: a missing config is a default run,
+    /// and the caller distinguishes the two.
+    pub fn load(path: &Path) -> Result<Self, ConfigError> {
+        let text = std::fs::read_to_string(path).map_err(|e| ConfigError::Unreadable {
+            path: path.to_path_buf(),
+            message: e.to_string(),
+        })?;
+        toml::from_str(&text).map_err(|e| ConfigError::Malformed {
+            path: path.to_path_buf(),
+            message: e.message().to_string(),
+        })
+    }
+
+    /// Every rule id and language name the file names, checked against what exists.
+    ///
+    /// Runs before any file is read, and reports every problem rather than the first: a config with
+    /// three typos should take one round trip to fix, not three.
+    pub fn validate(&self, languages: &[&str]) -> Result<(), Vec<ConfigError>> {
+        let registry = Registry::default();
+        let mut errors = Vec::new();
+
+        for id in self.rules.keys() {
+            if registry.get(id).is_none() {
+                errors.push(ConfigError::UnknownRule {
+                    id: id.clone(),
+                    scope: "[rules]".to_string(),
+                });
+            }
+        }
+        for (name, language) in &self.languages {
+            if !languages.contains(&name.as_str()) {
+                errors.push(ConfigError::UnknownLanguage { name: name.clone() });
+            }
+            for id in language.rules.keys() {
+                if registry.get(id).is_none() {
+                    errors.push(ConfigError::UnknownRule {
+                        id: id.clone(),
+                        scope: format!("[languages.{name}.rules]"),
+                    });
+                }
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// The registry and thresholds one language runs with: the global layer, then that language's.
+    ///
+    /// Callers must validate first — an unknown id is silently skipped here, because reporting it
+    /// per file would report it once per file.
+    pub fn resolve(&self, language: &str) -> (Registry, Thresholds) {
+        let mut registry = Registry::default();
+        let mut thresholds = self.thresholds.apply(Thresholds::default());
+
+        apply_rules(&mut registry, &self.rules);
+        if let Some(overrides) = self.languages.get(language) {
+            thresholds = overrides.thresholds.apply(thresholds);
+            apply_rules(&mut registry, &overrides.rules);
+        }
+        (registry, thresholds)
+    }
+
+    /// The excluded-path set, replaced wholesale when the file states one.
+    pub fn excluded_paths(&self) -> Option<Vec<String>> {
+        self.excluded_paths.clone()
+    }
+}
+
+fn apply_rules(registry: &mut Registry, rules: &BTreeMap<String, RuleConfig>) {
+    for (id, config) in rules {
+        if let Some(enabled) = config.enabled {
+            let _ = registry.set_enabled(id, enabled);
+        }
+        if let Some(tier) = config.tier {
+            let _ = registry.set_tier(id, tier.into());
+        }
+        if let Some(autofix) = config.autofix {
+            let _ = registry.set_autofix(id, autofix);
+        }
+    }
+}
+
+/// The nearest `laconic.toml` at or above `start`.
+///
+/// Nearest rather than merged: two config files on one path would make a rule's disposition depend
+/// on where the run was invoked from.
+pub fn discover(start: &Path) -> Option<PathBuf> {
+    let mut dir = Some(start);
+    while let Some(current) = dir {
+        let candidate = current.join("laconic.toml");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        dir = current.parent();
+    }
+    None
+}

@@ -318,6 +318,23 @@ impl Registry {
             None => Err(UnknownRule(id.to_string())),
         }
     }
+
+    /// Re-tier every kind the rule applies to, leaving each fix shape alone. A kind the rule does
+    /// not apply to stays inapplicable — re-tiering never switches a rule on where it never ran.
+    pub fn set_tier(&mut self, id: &str, tier: Tier) -> Result<(), UnknownRule> {
+        match self.entries.iter_mut().find(|e| e.id == id) {
+            Some(e) => {
+                for disposition in [&mut e.line, &mut e.block, &mut e.doc]
+                    .into_iter()
+                    .flatten()
+                {
+                    disposition.tier = tier;
+                }
+                Ok(())
+            }
+            None => Err(UnknownRule(id.to_string())),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

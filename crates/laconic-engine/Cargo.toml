@@ -7,4 +7,9 @@ license.workspace = true
 
 [dependencies]
 laconic-grammars.workspace = true
+serde = { version = "=1.0.229", features = ["derive"] }
+toml = "=1.1.5"
 tree-sitter.workspace = true
+
+[dev-dependencies]
+toml = "=1.1.5"
