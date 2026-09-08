@@ -7,6 +7,7 @@
 use laconic_engine::config::{ConfigFile, defaults_toml, discover};
 use laconic_engine::report::{EXIT_CLEAN, EXIT_USAGE};
 use laconic_engine::run::{Run, languages};
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -23,6 +24,7 @@ options:
   --config PATH               use this config file rather than discovering one
   --no-config                 run on the shipped defaults, ignoring any laconic.toml
   -h, --help                  this text
+  --version                   the version of this binary
 
 With no PATH, laconic reads the current directory. Exit 2 means the run never started: a usage
 error, or a config laconic could not fully understand.
@@ -35,6 +37,24 @@ fn main() -> ExitCode {
             eprintln!("{message}");
             ExitCode::from(EXIT_USAGE as u8)
         }
+    }
+}
+
+/// Write to stdout, treating a closed pipe as an ordinary end rather than a failure.
+///
+/// `print!` panics when the write fails, and the reader going away first is not a failure of this
+/// program: `laconic check . | head` closes the pipe by design. The panic it produced was a Rust
+/// backtrace on stderr where a linter's output belongs, which is the worst possible answer in the
+/// two places this tool runs — a pre-commit hook and a CI log.
+fn emit(text: &str) -> Result<(), std::io::Error> {
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    match handle
+        .write_all(text.as_bytes())
+        .and_then(|()| handle.flush())
+    {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        other => other,
     }
 }
 
@@ -64,14 +84,20 @@ enum ConfigSource {
 
 fn run() -> Result<i32, String> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    // Both before `parse`, so neither needs a command in front of it.
     if argv.iter().any(|a| a == "-h" || a == "--help") {
-        print!("{USAGE}");
+        emit(USAGE).map_err(|e| format!("laconic: {e}"))?;
+        return Ok(EXIT_CLEAN);
+    }
+    if argv.iter().any(|a| a == "--version") {
+        emit(&format!("laconic {}\n", env!("CARGO_PKG_VERSION")))
+            .map_err(|e| format!("laconic: {e}"))?;
         return Ok(EXIT_CLEAN);
     }
     let args = parse(&argv)?;
 
     if let Command::Defaults = args.command {
-        print!("{}", defaults_toml());
+        emit(&defaults_toml()).map_err(|e| format!("laconic: {e}"))?;
         return Ok(EXIT_CLEAN);
     }
 
@@ -101,13 +127,11 @@ fn run() -> Result<i32, String> {
         Command::Defaults => unreachable!("handled before any file is read"),
     };
 
-    print!(
-        "{}",
-        match args.format {
-            Format::Human => report.human(),
-            Format::Machine => report.machine(),
-        }
-    );
+    let output = match args.format {
+        Format::Human => report.human(),
+        Format::Machine => report.machine(),
+    };
+    emit(&output).map_err(|e| format!("laconic: {e}"))?;
     Ok(report.exit_code())
 }
 

@@ -4,6 +4,11 @@ laconic's findings are worth nothing unless something runs it without being aske
 integrations run the same binary against the same `laconic.toml` and act on the same exit codes:
 `0` clean, `1` a gate finding, `2` the run never started.
 
+`--format machine` is the shape to consume from anything that is not a person: one tab-separated
+record per finding carrying the rule, the file, the byte span, the line and column, the tier and the
+fix shape, followed by an indented `instruction` line. The byte span is there so an agent applies a
+Delete without re-deriving the range from the instruction text.
+
 ## The pre-commit hook
 
 ```sh

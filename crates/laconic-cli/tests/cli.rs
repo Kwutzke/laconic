@@ -50,6 +50,76 @@ fn a_gate_finding_exits_one_and_a_clean_tree_exits_zero() {
     assert_eq!(run.stdout, "");
 }
 
+/// The machine format is a contract, so its shape is asserted field by field.
+///
+/// The consumer is an agent acting on one diagnostic with no surrounding context. The byte span is
+/// the field that earns this test: an agent applies a Delete from `start..end` without re-deriving
+/// it from the instruction text, so a column shifted by one is a corrupted file rather than a
+/// misaligned caret.
+#[test]
+fn the_machine_format_carries_the_span_an_agent_edits_with() {
+    let dir = tempdir("machine");
+    write(&dir, "x.go", BANNERED);
+    let run = laconic(&dir, &["check", "--no-config", "--format", "machine"]);
+    assert_eq!(run.code, 1);
+
+    let mut lines = run.stdout.lines();
+    let record: Vec<&str> = lines
+        .next()
+        .expect("a finding record")
+        .split('\t')
+        .collect();
+    assert_eq!(record.len(), 9, "got {record:?}");
+    assert_eq!(record[0], "finding");
+    assert_eq!(record[1], "banner");
+    assert_eq!(record[2], "./x.go");
+    assert_eq!(record[7], "gate");
+    assert_eq!(record[8], "delete");
+
+    // The span, read back against the source it was reported on.
+    let (start, end) = (parse_field(record[3]), parse_field(record[4]));
+    let src = std::fs::read_to_string(dir.join("x.go")).expect("read");
+    assert_eq!(
+        &src[start..end],
+        "// ==============",
+        "the span does not cover the comment it reported"
+    );
+
+    // Line and column are 1-based, and point at the same place.
+    assert_eq!(parse_field(record[5]), 3);
+    assert_eq!(parse_field(record[6]), 1);
+
+    let instruction = lines.next().expect("an instruction line");
+    assert!(
+        instruction.starts_with("\tinstruction\t"),
+        "got {instruction:?}"
+    );
+}
+
+fn parse_field(field: &str) -> usize {
+    field
+        .parse()
+        .unwrap_or_else(|_| panic!("{field:?} is not a number"))
+}
+
+/// `--version` and `--help` answer without a command in front of them, and exit 0.
+#[test]
+fn version_and_help_need_no_command() {
+    let dir = tempdir("version");
+    let run = laconic(&dir, &["--version"]);
+    assert_eq!(run.code, 0, "stderr was {}", run.stderr);
+    assert!(run.stdout.starts_with("laconic "), "{}", run.stdout);
+    assert!(
+        run.stdout.trim().len() > "laconic ".len(),
+        "no version number: {}",
+        run.stdout
+    );
+
+    let run = laconic(&dir, &["--help"]);
+    assert_eq!(run.code, 0);
+    assert!(run.stdout.contains("laconic check"), "{}", run.stdout);
+}
+
 /// An extension no pack claims produces nothing at all — not a warning, not a line.
 ///
 /// laconic runs over whole repositories. A note per `.json` and `.md` is what makes the findings
