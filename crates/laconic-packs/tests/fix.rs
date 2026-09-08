@@ -132,6 +132,40 @@ fn fixed(name: &str, src: &str) -> String {
     fix(src, &analysis, &findings, &registry, pack)
 }
 
+/// Code **after** a block comment on its line survives the fix.
+///
+/// The whole-line branch had one guard, for code *before* the comment, so
+/// `/* ---- helpers ---- */ func f() {}` — `banner` at gate tier with autofix on — took the
+/// declaration with it. Neither AC5 nor AC6 could see it: the residue parses and a second pass is a
+/// no-op, so the deletion was silent in exactly the mode that writes files.
+#[test]
+fn a_block_comment_never_takes_the_code_beside_it() {
+    let once = fixed("x.go", "package x\n\n/* ---- helpers ---- */ func f() {}\n");
+    assert!(
+        once.contains("func f() {}"),
+        "fix deleted the declaration:\n{once}"
+    );
+    assert!(!once.contains("helpers"), "the banner survived:\n{once}");
+    assert!(
+        once.contains("\nfunc f() {}"),
+        "the declaration kept a leading space:\n{once:?}"
+    );
+    assert_eq!(once, fixed("x.go", &once), "second pass changed the file");
+}
+
+/// The same guard from the other side, which was already right and must stay so.
+#[test]
+fn a_trailing_comment_still_keeps_the_code_before_it() {
+    let src = "package x\n\nfunc f() {\n\tn := 1 // changed to use a map\n\t_ = n\n}\n";
+    let once = fixed("x.go", src);
+    assert!(once.contains("n := 1"), "{once}");
+    assert!(!once.contains("changed to use a map"), "{once}");
+    assert!(
+        !once.contains("n := 1 \n"),
+        "a trailing space was left behind: {once:?}"
+    );
+}
+
 /// A directive naming a *different* rule is the case that orphans one.
 ///
 /// Suppression is per rule, so a block carrying `laconic:ignore restate` still reports `banner` and

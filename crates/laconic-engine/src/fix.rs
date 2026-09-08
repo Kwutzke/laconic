@@ -48,13 +48,41 @@ fn block_at<'a>(analysis: &'a FileAnalysis, span: &Range<usize>) -> Option<&'a C
 
 /// What one block's removal takes with it.
 ///
-/// A trailing block keeps its line, because the code before it on that line is not the finding.
-/// Every other block goes by whole lines, together with the directive protecting it — a directive
-/// outliving its block is a `deadIgnore` finding this function would have manufactured.
+/// **A block sharing its line with code keeps that line, whichever side the code is on.** Only a
+/// block that owns every line it touches is removed by whole lines, together with the directive
+/// protecting it — a directive outliving its block is a `deadIgnore` finding this function would
+/// have manufactured.
+///
+/// The two sides are separate questions and were not always asked as one. `trailing` answers the
+/// first: `pipeline.rs` sets it from the text *before* the comment on its opening line. Nothing
+/// asked about the text after it, so a block comment that opens a line and has code after it —
+/// `/* ---- helpers ---- */ func f() {}`, which `banner` reports at gate tier with autofix on —
+/// fell to the whole-line branch and `laconic fix` deleted the declaration. Nothing caught it:
+/// the residue parses, and a second pass is a no-op, so both AC5 and AC6 stayed green.
 fn deletion_range(src: &str, block: &CommentBlock, policy: BlankLinePolicy) -> Range<usize> {
-    if block.comments.iter().any(|c| c.trailing) {
-        let start = src[..block.span.start].trim_end_matches([' ', '\t']).len();
-        return start..block.span.end;
+    let code_before = block.comments.iter().any(|c| c.trailing);
+    let code_after = !src[block.span.end..]
+        .chars()
+        .take_while(|c| *c != '\n')
+        .all(char::is_whitespace);
+
+    if code_before || code_after {
+        // The comment's span plus the whitespace on whichever side it was joined to code. Trimming
+        // the near side only is what keeps `x := 1 // note` from leaving a trailing space and
+        // `/* note */ func f()` from leaving a leading one, while `a := 1 /* n */ + 2` — code on
+        // both sides — closes to a single space rather than none.
+        let start = if code_before {
+            src[..block.span.start].trim_end_matches([' ', '\t']).len()
+        } else {
+            block.span.start
+        };
+        let end = if code_after {
+            block.span.end + src[block.span.end..].len()
+                - src[block.span.end..].trim_start_matches([' ', '\t']).len()
+        } else {
+            block.span.end
+        };
+        return start..end;
     }
 
     let mut start = line_start(src, block.span.start);
