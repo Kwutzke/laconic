@@ -84,8 +84,8 @@ pub fn descendants_of_kind<'t>(root: Node<'t>, kinds: &[&str]) -> Vec<Node<'t>> 
 /// test, so the declaration reads as undocumented and its doc comment drops to a kind that carries
 /// a Delete fix at gate tier.
 ///
-/// Stripping is `strip_c_markers`, which both callers use; a pack whose comments are not C-shaped
-/// needs its own walk.
+/// Stripping here is `strip_c_markers`, which is not every caller's own answer — the TS/JS pack
+/// strips `<!--` first — so the directive test below sees this function's output, not the pack's.
 pub fn preceding_comment<'t>(
     subject: Node<'t>,
     src: &str,

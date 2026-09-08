@@ -15,7 +15,7 @@ use laconic_grammars::Grammar;
 use tree_sitter::Node;
 
 const EXTENSIONS: &[(&str, Grammar)] = &[("rs", Grammar::Rust)];
-const COMMENT_KINDS: &[&str] = &["line_comment", "block_comment"];
+pub(crate) const COMMENT_KINDS: &[&str] = &["line_comment", "block_comment"];
 
 /// Concern 3.
 ///
@@ -35,7 +35,7 @@ const GENERATED_MARKERS: &[&str] = &[
 ];
 
 /// Items that can carry a doc comment.
-const ITEMS: &[&str] = &[
+pub(crate) const ITEMS: &[&str] = &[
     "function_item",
     "struct_item",
     "enum_item",
@@ -53,7 +53,7 @@ const ITEMS: &[&str] = &[
 
 /// Named children of a block that are not statements. A statement-level attribute inflates
 /// `density`'s denominator by one per attribute.
-const NON_STATEMENTS: &[&str] = &["attribute_item", "inner_attribute_item"];
+pub(crate) const NON_STATEMENTS: &[&str] = &["attribute_item", "inner_attribute_item"];
 
 pub struct RustPack;
 

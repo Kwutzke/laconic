@@ -7,7 +7,7 @@
 
 use crate::domain::Attachment;
 use crate::rule::{BlockContext, BlockRule, RuleHit};
-use crate::rules::matching::{first_match, normalise, strip_code_spans};
+use crate::rules::matching::{contains_at_word_boundary, first_match, normalise, strip_code_spans};
 
 /// Change-log and process language: what the edit was, rather than what the code is.
 const NARRATION: &[&str] = &[
@@ -121,6 +121,7 @@ fn banner_reason(body: &str, labels_allowed: bool) -> Option<&'static str> {
     }
     if labels_allowed
         && lines.len() == 1
+        && !claimed_by_task(lines[0])
         && (is_section_label(lines[0]) || is_fenced_label(lines[0]))
     {
         return Some("a section label");
@@ -128,12 +129,19 @@ fn banner_reason(body: &str, labels_allowed: bool) -> Option<&'static str> {
     None
 }
 
-/// A label fenced on **both** sides — `--- helpers ---`, `=== Setup ===`. Case is not the test:
-/// reading all-caps as the signal missed 58 of 85 real banners in one corpus, every one a
-/// mixed-case label in dashes. Nobody writes prose wrapped in `---`.
-///
-/// Both sides are required, so a heading that runs on into content is left alone — content is what
-/// this rule must not delete.
+/// Whether `task` has a claim on this line, which stands `banner` down. Gates the label branch
+/// rather than one predicate, so no label form added later can opt out of it. A marker at a word
+/// boundary, not the whole line: a decorated marker carries content and `banner` autofixes.
+fn claimed_by_task(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    TASK_MARKERS
+        .iter()
+        .any(|m| contains_at_word_boundary(&lower, &m.to_lowercase()))
+}
+
+/// A label fenced on **both** sides — `--- helpers ---`, `=== Setup ===`. Case is not the signal:
+/// reading all-caps as one missed 58 of 85 real banners in a corpus. Both sides required, so a
+/// heading running on into content is left alone.
 fn is_fenced_label(line: &str) -> bool {
     let line = line.trim();
     let fence =
@@ -160,19 +168,12 @@ fn is_step_label(line: &str) -> bool {
     after.is_empty() || after.starts_with([':', '-', '.', ')'])
 }
 
-/// A standalone all-caps label — `HELPERS`, `--- SETUP ---`.
-///
-/// A task marker is excluded: `TODO` is all caps and belongs to `task`, which asks a different
-/// question about it. Two rules firing on one comment would report the same block twice with two
-/// different instructions.
+/// A standalone all-caps label — `HELPERS`, `--- SETUP ---`. A shape test only; whether a task
+/// marker takes precedence is [`claimed_by_task`]'s question, asked once for every label form.
 fn is_section_label(line: &str) -> bool {
     let stripped = line.trim_matches(|c: char| RULE_CHARS.contains(&c) || c.is_whitespace());
     let letters: Vec<char> = stripped.chars().filter(|c| c.is_alphabetic()).collect();
-    if letters.len() < 2 || letters.iter().any(|c| c.is_lowercase()) {
-        return false;
-    }
-    let upper = stripped.to_uppercase();
-    !TASK_MARKERS.iter().any(|m| upper == *m)
+    letters.len() >= 2 && !letters.iter().any(|c| c.is_lowercase())
 }
 
 pub struct Attribution;
@@ -281,14 +282,17 @@ fn task_without_reference(body: &str, marker: &str) -> bool {
     false
 }
 
+/// The closing parenthesis is required, for the same reason [`strip_code_spans`] decides parity
+/// before it strips: `split(')')` yields the whole remainder when there is no `)`, so `TODO(` with
+/// nothing closing it reads as a marker that *has* a reference and `task` goes silent on it.
 fn has_reference(after: &str) -> bool {
     let Some(rest) = after.strip_prefix('(') else {
         return false;
     };
-    let Some(inner) = rest.split(')').next() else {
+    let Some(close) = rest.find(')') else {
         return false;
     };
-    !inner.trim().is_empty()
+    !rest[..close].trim().is_empty()
 }
 
 pub struct FileRef;
@@ -300,8 +304,12 @@ impl BlockRule for FileRef {
 
     /// A source-file path per the pack's extension list — concern 1. The instruction names the
     /// alternative, because the consumer acts on the diagnostic alone.
+    ///
+    /// No code-span carve-out here, unlike the deny-list rules. Backticks around a deny-list term
+    /// mark a *mention* of the term; backticks around a path are how a path is ordinarily written,
+    /// so stripping them makes the rule evadable by the formatting most authors already use.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
-        let body = strip_code_spans(&ctx.block.body());
+        let body = ctx.block.body();
         let path = words_with_punctuation(&body)
             .into_iter()
             .find(|w| looks_like_source_path(w, ctx.source_extensions))?;
@@ -401,18 +409,55 @@ mod tests {
         assert!(!looks_like_source_path("config.json", &["go"]));
     }
 
-    /// This test and the ones below it pin `cargo mutants` survivors — lines coverage called green
-    /// that no test would have noticed changing.
-    ///
-    /// The trim is what lets a decorated task marker reach `task` instead of `banner`: without it
-    /// `-- TODO --` is a section label, and two rules report one comment.
+    /// Pins a `cargo mutants` survivor; each says so on itself, since a doc claiming a *range* is
+    /// falsified by anything inserted into it. Every fence width, because under three rule
+    /// characters only `is_section_label` runs — testing one width asserted the exclusion where the
+    /// other predicate never runs.
     #[test]
     fn a_decorated_task_marker_is_not_a_section_label() {
         assert!(banner_reason(" -- TODO --", true).is_none());
         assert!(banner_reason(" == FIXME ==", true).is_none());
+        assert!(banner_reason(" --- TODO ---", true).is_none());
+        assert!(banner_reason(" === FIXME ===", true).is_none());
         assert!(banner_reason(" -- HELPERS --", true).is_some());
+        assert!(banner_reason(" --- HELPERS ---", true).is_some());
     }
 
+    /// A decorated marker carrying a reference and a sentence is the destructive case: `banner`
+    /// is the only Delete rule besides `narration` shipping autofix on, so classifying this as a
+    /// label deletes the sentence and the issue number with it.
+    #[test]
+    fn a_decorated_task_marker_carrying_content_is_not_a_label() {
+        assert!(
+            banner_reason(
+                "--- TODO(#42) the retry path drops the last batch ---",
+                true
+            )
+            .is_none()
+        );
+        assert!(banner_reason("### HACK until the upstream fix lands ###", true).is_none());
+    }
+
+    /// A backticked path is a path. The carve-out that silenced this was applied by where the
+    /// matcher lived rather than by what it matches, which made the rule evadable by backticks.
+    #[test]
+    fn a_backticked_path_is_still_a_path() {
+        let found = words_with_punctuation("Mirrors the shape in `internal/parser.go`.")
+            .into_iter()
+            .find(|w| looks_like_source_path(w, &["go"]));
+        assert_eq!(found, Some("`internal/parser.go`."));
+    }
+
+    /// An unterminated `(` is not a reference. Same shape as the backtick parity rule: a delimiter
+    /// scan that accepts an unclosed opener silences the rule instead of firing it.
+    #[test]
+    fn an_unclosed_parenthesis_is_not_an_issue_reference() {
+        assert!(task_without_reference("TODO( never closed", "TODO"));
+        assert!(task_without_reference("TODO()", "TODO"));
+        assert!(!task_without_reference("TODO(#42) the retry path", "TODO"));
+    }
+
+    /// Pins a `cargo mutants` survivor.
     /// Two letters is a label; one is not. The boundary is the whole content of the rule.
     #[test]
     fn a_two_letter_label_is_the_shortest_one() {
@@ -420,6 +465,7 @@ mod tests {
         assert!(!is_section_label("X"));
     }
 
+    /// Pins a `cargo mutants` survivor.
     /// `etc` must be a word, not a suffix. Without the boundary check any word ending in those
     /// three letters trips the rule.
     #[test]
@@ -433,6 +479,7 @@ mod tests {
         assert!(!ends_with_etc(" the codec"));
     }
 
+    /// Pins a `cargo mutants` survivor.
     /// A marker inside an identifier is not a marker. `_TODO` is a name, and firing on it would
     /// ask the reader to add an issue reference to a variable.
     #[test]
@@ -441,8 +488,9 @@ mod tests {
         assert!(task_without_reference("TODO is the field name", "TODO"));
     }
 
-    /// `fileref` splits on punctuation as well as whitespace. Without it a path followed by a
-    /// comma is part of a longer token and no path is ever found.
+    /// Pins a `cargo mutants` survivor.
+    /// A path is found whatever punctuation sits against it. The trimming is the predicate's alone,
+    /// so this is what notices if the trim set loses a mark.
     #[test]
     fn a_path_followed_by_punctuation_is_still_a_path() {
         for body in [
