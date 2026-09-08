@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+      # laconic over its own source. The same binary, the same laconic.toml and the same exit codes
+      # the pre-commit hook uses — the two integrations disagreeing is the failure that makes a hook
+      # worth bypassing.
+      #
+      # Gate findings fail the job; warn findings are printed and do not. That is the tiers doing
+      # their job rather than a lenient setting: a warn-tier rule is one the registry says is not
+      # yet calibrated enough to block on.
+      - name: laconic
+        run: cargo run --release -p laconic-cli -- check .

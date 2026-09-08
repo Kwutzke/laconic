@@ -1,0 +1,68 @@
+#!/bin/sh
+# Lint what is about to be committed, and refuse the commit on a gate finding.
+#
+# The staged content, not the working tree. `git show :path` is the version being committed, and a
+# hook that lints the file on disk blocks on edits the author deliberately left unstaged — which is
+# how a hook gets turned off. Every staged file is written into a temporary tree at its repository
+# path, so exclusions and language resolution see the paths they would see in a real run.
+#
+# Install: hooks/install.sh, which symlinks this file alone. Do not set core.hooksPath — it replaces
+# .git/hooks wholesale and would silently disable every other hook the repository has.
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+# Added, copied and modified. A deletion has no content to lint, and a rename arrives as its new
+# path under A or M.
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -n "$staged" ] || exit 0
+
+laconic=""
+for candidate in "$root/target/release/laconic" "$root/target/debug/laconic"; do
+  [ -x "$candidate" ] && laconic="$candidate" && break
+done
+if [ -z "$laconic" ]; then
+  laconic=$(command -v laconic || true)
+fi
+if [ -z "$laconic" ]; then
+  echo "pre-commit: no laconic binary; build one with 'cargo build -p laconic-cli'" >&2
+  echo "pre-commit: commit allowed — a missing tool is not a finding" >&2
+  exit 0
+fi
+
+staging=$(mktemp -d)
+trap 'rm -rf "$staging"' EXIT
+
+printf '%s\n' "$staged" | while IFS= read -r file; do
+  mkdir -p "$staging/$(dirname "$file")"
+  git show ":$file" >"$staging/$file"
+done
+
+# `--config` rather than discovery: the temporary tree holds no laconic.toml, and discovery from
+# there would walk up out of the repository entirely.
+set -- check
+[ -f "$root/laconic.toml" ] && set -- "$@" --config "$root/laconic.toml"
+set -- "$@" .
+
+output=$(cd "$staging" && "$laconic" "$@") && status=0 || status=$?
+
+if [ "$status" -eq 0 ]; then
+  printf '%s' "$output"
+  exit 0
+fi
+
+printf '%s\n' "$output" >&2
+if [ "$status" -eq 2 ]; then
+  echo "pre-commit: laconic did not run — the finding above is about the config, not the code" >&2
+  exit 1
+fi
+
+cat >&2 <<'EOF'
+
+pre-commit: gate findings in the staged changes. Three ways past this:
+  cargo run -p laconic-cli -- fix <path>   apply the mechanical ones, then stage the result
+  edit the comment                         the instruction says what to change
+  // laconic:ignore <rule> — <reason>      keep it, on the record
+EOF
+exit 1

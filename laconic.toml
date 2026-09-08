@@ -1,15 +1,18 @@
 # laconic's configuration for laconic itself.
 #
 # Everything below the excluded paths is the shipped defaults, stated in full: this repository
-# retunes nothing, and the file is here to document what the defaults are and to carry the one
-# exclusion the engine cannot ship.
+# retunes nothing, and the file is here to document what the defaults are and to carry the two
+# exclusions the engine cannot ship.
 #
 # `probe/` holds grammar fixtures where a detached comment exists in order to be a detached comment
 # and a rule of slashes exists to be a banner. Every finding in there is correct and none is
 # actionable. It is not a universal convention, so it does not belong in an engine default — which
 # is why `excluded_paths` replaces the default set rather than extending it, and why the four
 # defaults are restated here.
-excluded_paths = ["testdata", "fixtures", "vendor", "node_modules", "probe"]
+#
+# `target` is here so that `laconic check .` at the repository root means what it looks like it
+# means. Build output holds generated Rust nobody wrote and nobody will edit.
+excluded_paths = ["testdata", "fixtures", "vendor", "node_modules", "probe", "target"]
 
 # laconic's shipped defaults, stated in full.
 #
