@@ -6,7 +6,7 @@
 //! detected.
 
 use crate::rule::{BlockContext, BlockRule, RuleHit};
-use crate::rules::matching::{first_match, normalise};
+use crate::rules::matching::{first_match, normalise, strip_code_spans};
 
 /// Change-log and process language: what the edit was, rather than what the code is.
 const NARRATION: &[&str] = &[
@@ -218,7 +218,7 @@ impl BlockRule for Task {
         "task"
     }
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
-        let body = normalise(&ctx.block.body());
+        let body = normalise(&strip_code_spans(&ctx.block.body()));
         let marker = TASK_MARKERS
             .iter()
             .find(|m| task_without_reference(&body, m))?;
@@ -270,7 +270,7 @@ impl BlockRule for FileRef {
     /// A source-file path per the pack's extension list — concern 1. The instruction names the
     /// alternative, because the consumer acts on the diagnostic alone.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
-        let body = ctx.block.body();
+        let body = strip_code_spans(&ctx.block.body());
         let path = words_with_punctuation(&body)
             .into_iter()
             .find(|w| looks_like_source_path(w, ctx.source_extensions))?;

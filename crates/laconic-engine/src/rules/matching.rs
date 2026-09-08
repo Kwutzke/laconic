@@ -21,9 +21,34 @@ pub fn normalise(body: &str) -> String {
     body.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// The body with inline code spans replaced by a space — a quotation is not a use.
+///
+/// Prose *about* a term contains the term. Six of laconic's own findings were this: a doc comment
+/// explaining what `task` does was reported as a task, and one explaining the deny list was reported
+/// as narration. Replacing rather than deleting keeps the word boundary on each side.
+///
+/// An unterminated backtick strips nothing. One stray mark would otherwise silence every rule from
+/// there to the end of the block, which is a worse failure than the one this prevents.
+pub fn strip_code_spans(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    while let Some(open) = rest.find('`') {
+        let after = &rest[open + 1..];
+        let Some(close) = after.find('`') else { break };
+        out.push_str(&rest[..open]);
+        out.push(' ');
+        rest = &after[close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// The first deny-list term that appears in `body` at word boundaries, if any.
+///
+/// Code spans come out first. This is the deny-list path only: `words` feeds `restate`, where a
+/// backticked identifier is a real mention of the symbol and must still count.
 pub fn first_match<'t>(body: &str, terms: &[&'t str]) -> Option<&'t str> {
-    let haystack = normalise(body).to_lowercase();
+    let haystack = normalise(&strip_code_spans(body)).to_lowercase();
     terms
         .iter()
         .copied()
@@ -111,6 +136,45 @@ mod tests {
         );
         assert_eq!(
             first_match("we changed to a map\nand it is faster", &["changed to"]),
+            Some("changed to")
+        );
+    }
+
+    /// Every case here is a real finding laconic reported against its own source.
+    #[test]
+    fn a_term_inside_a_code_span_is_a_quotation() {
+        // `report.rs` — an example of narration, quoted in a comment about column arithmetic.
+        assert_eq!(
+            first_match(
+                "`x := \"日本\" // changed to use a map` reports four columns right",
+                &["changed to"]
+            ),
+            None
+        );
+        // `pack_concerns.rs` — the span crosses a line break, which the block joins.
+        assert_eq!(
+            first_match(
+                "leaving it out would make `<!-- changed to use a\nmap -->` invisible",
+                &["changed to"]
+            ),
+            None
+        );
+        // The same term outside a span still fires, with a span elsewhere in the block.
+        assert_eq!(
+            first_match(
+                "`TODO` is all caps; we changed to a map here",
+                &["changed to"]
+            ),
+            Some("changed to")
+        );
+    }
+
+    /// One stray backtick must not silence the rest of the block — the failure would be worse than
+    /// the quotation it is guarding against, and trivially evadable on purpose.
+    #[test]
+    fn an_unterminated_code_span_strips_nothing() {
+        assert_eq!(
+            first_match("we changed to a map ` and never closed it", &["changed to"]),
             Some("changed to")
         );
     }
