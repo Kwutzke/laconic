@@ -10,3 +10,6 @@
 
 # local scratch driver; laconic#9azt builds the real CLI
 /crates/laconic-packs/examples/scan.rs
+
+# git worktrees for isolated work
+/.claude/worktrees/
