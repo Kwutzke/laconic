@@ -260,6 +260,21 @@ fn apply_rules(registry: &mut Registry, rules: &BTreeMap<String, RuleConfig>) {
 /// Nearest rather than merged: two config files on one path would make a rule's disposition depend
 /// on where the run was invoked from.
 pub fn discover(start: &Path) -> Option<PathBuf> {
+    // Absolute before walking, because `parent()` is lexical: `Path::new(".").parent()` is `Some("")`
+    // and `""`'s is `None`, so a relative start tested its own directory twice and stopped there —
+    // reporting no config while one sat in the parent, which is the silent half-understood-config
+    // outcome this module opens by refusing.
+    // `absolute`, not `canonicalize`: this needs the path rooted so the walk terminates at the
+    // filesystem root, and nothing more. Canonicalising would also resolve symlinks, which changes
+    // which `laconic.toml` a symlinked checkout finds and what path the caller is handed back.
+    let owned;
+    let start = match std::path::absolute(start) {
+        Ok(rooted) => {
+            owned = rooted;
+            owned.as_path()
+        }
+        Err(_) => start,
+    };
     let mut dir = Some(start);
     while let Some(current) = dir {
         let candidate = current.join("laconic.toml");

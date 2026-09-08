@@ -184,7 +184,11 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 }
             }
             "--no-config" => config = ConfigSource::None,
-            other if other.starts_with("--") => {
+            // Any leading dash, not just two. A mistyped short flag used to fall through to the
+            // path arm, and a path with no extension resolves no pack and is skipped in silence —
+            // right for `data.json`, wrong for `-q`. `laconic check -q` scanned nothing and exited
+            // 0, so a hook or CI step with a typo in it reported a clean tree.
+            other if other.starts_with('-') && other.len() > 1 => {
                 return Err(format!("laconic: unknown option {other:?}\n\n{USAGE}"));
             }
             other => paths.push(PathBuf::from(other)),

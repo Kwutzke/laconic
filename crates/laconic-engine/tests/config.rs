@@ -6,6 +6,7 @@
 
 use laconic_engine::config::{ConfigError, ConfigFile, Thresholds, discover};
 use laconic_engine::registry::Tier;
+use std::path::Path;
 
 const LANGUAGES: &[&str] = &["go", "python", "rust", "java", "typescript"];
 
@@ -188,6 +189,32 @@ fn discovery_takes_the_nearest_file() {
         discover(&nested),
         Some(nested.join("laconic.toml")),
         "the nearer file wins, rather than the two merging"
+    );
+}
+
+/// A relative start walks up too.
+///
+/// `parent()` is lexical: `Path::new(".").parent()` is `Some("")` and `""`'s is `None`, so the walk
+/// tested the starting directory twice and stopped inside it — reporting no config while one sat in
+/// the parent, which is the silent half-understood-config outcome this module opens by refusing.
+///
+/// Serialised against the other discovery tests by using its own directory: the process-wide
+/// current directory is what makes a relative path mean anything, and it cannot be set per test.
+#[test]
+fn discovery_walks_up_from_a_relative_path() {
+    let dir = tempdir().join("relative");
+    let nested = dir.join("a").join("b");
+    std::fs::create_dir_all(&nested).expect("mkdir");
+    std::fs::write(dir.join("laconic.toml"), "").expect("write");
+
+    let cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(&nested).expect("chdir");
+    let found = discover(Path::new("."));
+    std::env::set_current_dir(cwd).expect("chdir back");
+
+    assert!(
+        found.is_some_and(|p| p.ends_with("laconic.toml")),
+        "a relative start found no config in an ancestor"
     );
 }
 

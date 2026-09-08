@@ -226,3 +226,26 @@ fn blank_line_handling_is_the_packs_answer() {
         "Python leaves the surrounding blanks"
     );
 }
+
+/// `CollapseRun` takes the whole run below, not one line of it.
+///
+/// Both sides tested a single line, so a longer run kept everything past the first blank. The
+/// blanks *above* are deliberately untouched — taking one would let a removal under a declaration
+/// pull that declaration up — which is why three above stay three.
+#[test]
+fn collapsing_takes_the_whole_run_below() {
+    let go = "package x\n\nfunc f() int {\n\tn := 1\n\n\n\n\t// ---- helpers ----\n\n\n\n\treturn n\n}\n";
+    assert_eq!(
+        fixed("x.go", go),
+        "package x\n\nfunc f() int {\n\tn := 1\n\n\n\n\treturn n\n}\n",
+        "the run below should be gone and the run above untouched"
+    );
+
+    // One on each side is the case the policy was named for, and there it does reach one.
+    let single =
+        "package x\n\nfunc f() int {\n\tn := 1\n\n\t// ---- helpers ----\n\n\treturn n\n}\n";
+    assert_eq!(
+        fixed("x.go", single),
+        "package x\n\nfunc f() int {\n\tn := 1\n\n\treturn n\n}\n"
+    );
+}

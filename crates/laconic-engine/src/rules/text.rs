@@ -335,9 +335,16 @@ fn words_with_punctuation(body: &str) -> Vec<&str> {
 /// strings that do not appear in the comment as written, told to an agent instructed to replace
 /// them literally. That was 73 of the corpus's 121 findings.
 fn source_path<'w>(word: &'w str, extensions: &[&'static str]) -> Option<&'w str> {
-    // Every punctuation mark that can sit against a path in prose, on either side: quotes and
-    // brackets open as well as close.
-    let candidate = word.trim_matches(['.', '(', ')', '[', ']', ':', ',', ';', '"', '\'', '`']);
+    // Brackets and quotes come off both ends; `.` comes off the end only.
+    //
+    // A trailing dot is the sentence's, a leading one is the path's. Trimmed symmetrically,
+    // `./internal/parser.go` was reported as `/internal/parser.go` — the same defect this function
+    // exists to prevent, arriving at the other end of the word.
+    const BOTH: [char; 10] = ['(', ')', '[', ']', ':', ',', ';', '"', '\'', '`'];
+    let candidate = word
+        .trim_matches(BOTH)
+        .trim_end_matches('.')
+        .trim_matches(BOTH);
     // A path inside a URL is a link to something outside this repository — usually the upstream
     // source a file derives from. No symbol here replaces it, so the rule's own instruction cannot
     // be followed, and the reference is the useful kind: it does not go stale on a local rename,
@@ -430,6 +437,21 @@ mod tests {
         assert_eq!(
             source_path("`internal/parser.go`", &["go"]),
             Some("internal/parser.go")
+        );
+    }
+
+    /// A leading dot belongs to the path; a trailing one belongs to the sentence.
+    #[test]
+    fn a_relative_path_keeps_its_leading_dot() {
+        assert_eq!(
+            source_path("./internal/parser.go", &["go"]),
+            Some("./internal/parser.go")
+        );
+        assert_eq!(source_path("../x/y.go,", &["go"]), Some("../x/y.go"));
+        assert_eq!(
+            source_path("(./parser.go).", &["go"]),
+            Some("./parser.go"),
+            "brackets still come off both ends"
         );
     }
 

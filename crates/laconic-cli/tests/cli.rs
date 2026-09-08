@@ -214,6 +214,26 @@ fn an_unknown_command_exits_two() {
     assert_eq!(laconic(&dir, &["check", "--nosuchflag"]).code, 2);
 }
 
+/// A mistyped **short** flag is an error too, and this is the case that was not.
+///
+/// `-q` fell through to the path arm; a path with no extension resolves no pack and is skipped in
+/// silence, which is right for `data.json` and wrong for a flag. The run scanned nothing and exited
+/// 0, so a hook or a CI step with a typo in it reported a clean tree.
+#[test]
+fn a_mistyped_short_flag_exits_two_rather_than_reporting_clean() {
+    let dir = tempdir("short-flag");
+    write(&dir, "x.go", BANNERED);
+    assert_eq!(
+        laconic(&dir, &["check", "--no-config"]).code,
+        1,
+        "the fixture must gate, or this test proves nothing"
+    );
+
+    let run = laconic(&dir, &["check", "--no-config", "-q"]);
+    assert_eq!(run.code, 2, "stdout was {:?}", run.stdout);
+    assert!(run.stderr.contains("-q"), "{}", run.stderr);
+}
+
 /// AC9, end to end: `laconic defaults` written to `laconic.toml` changes no finding.
 ///
 /// The file states every rule and every threshold explicitly, so a value it got wrong would move a

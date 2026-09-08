@@ -27,7 +27,15 @@ pub struct DocComment<'t> {
 pub enum BlankLinePolicy {
     /// Remove the block's lines and leave surrounding blank lines as they were.
     LeaveSurrounding,
-    /// Remove the block's lines and collapse a resulting run of blank lines to one.
+    /// Remove the block's lines, then the run of blank lines **below** the removal.
+    ///
+    /// Below only, never above: taking a blank above would let a removal sitting under a
+    /// declaration pull that declaration up against whatever precedes it.
+    ///
+    /// That bound is why this is not "collapse to one". With one blank on each side — the ordinary
+    /// case, and what the name was coined for — removing the run below leaves exactly one. Where
+    /// the blanks *above* already run longer, they stay, because the only way to reach one from
+    /// there is the edit this policy refuses to make.
     CollapseRun,
 }
 

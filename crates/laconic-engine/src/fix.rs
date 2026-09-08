@@ -93,10 +93,24 @@ fn deletion_range(src: &str, block: &CommentBlock, policy: BlankLinePolicy) -> R
         end = end.max(line_end(src, directive.span.end));
     }
 
-    // Collapsing takes the blank line *below*, never the one above, so a removal directly under a
+    // Collapsing takes blank lines *below*, never the ones above, so a removal directly under a
     // declaration cannot pull that declaration up against the previous one.
+    //
+    // **The whole run below, less one.** `blank_above` and `blank_below` each test a single line,
+    // and taking one blank left two wherever the run was longer — which is `DropOneBlank` wearing
+    // `CollapseRun`'s name. The blanks above are counted only to know a run exists on both sides;
+    // what is removed is measured below.
     if policy == BlankLinePolicy::CollapseRun && blank_above(src, start) && blank_below(src, end) {
-        end = line_end(src, end);
+        let mut cursor = end;
+        while blank_below(src, cursor) {
+            let next = line_end(src, cursor);
+            // The last blank of the run stays: collapsing is to one, not to none.
+            if !blank_below(src, next) {
+                break;
+            }
+            cursor = next;
+        }
+        end = line_end(src, cursor);
     }
     start..end
 }
