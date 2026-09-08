@@ -172,16 +172,21 @@ impl BlockRule for DocBloat {
         if !over_absolute && !over_relative {
             return None;
         }
+        // Which test fired decides what the second half says, because they are different failures.
+        // Neither sentence says "move the rest into the body" any more: that instruction taught a
+        // repairing agent to relocate prose into the function it documented, where `density` then
+        // reported it — one rule instructing what another punishes.
         Some(RuleHit::new(
             ctx.block.span.clone(),
-            match members {
-                0 => format!(
-                    "shorten this doc comment: {lines} lines — keep what a caller needs in the summary and move the detail below it"
-                ),
-                _ => format!(
-                    "shorten this doc comment: {lines} lines documenting {} — keep what a caller needs and move the rest into the body",
+            if over_relative {
+                format!(
+                    "shorten this doc comment: {lines} lines documenting {} — keep only what a caller cannot derive from the code. Long explanatory prose can signal the code itself is hard to follow; consider restructuring it.",
                     members_phrase(members)
-                ),
+                )
+            } else {
+                format!(
+                    "shorten this doc comment: {lines} lines — keep only what a reader cannot derive; the rest belongs in a document if it belongs anywhere"
+                )
             },
         ))
     }
