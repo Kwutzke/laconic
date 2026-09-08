@@ -2,8 +2,9 @@
 
 use laconic_engine::domain::{Attachment, CommentKind, Visibility};
 use laconic_engine::{
-    Config, FileAnalysis, Registry, Rules, Skipped, all_block_rules, all_subject_rules, analyse,
-    dispatch, resolve,
+    ABSOLUTE_DOC_LINES, Config, DENSITY_MIN_COMMENT_LINES, DOC_LINES_PER_MEMBER, FileAnalysis,
+    Finding, Registry, Rules, Skipped, all_block_rules, all_subject_rules, analyse, dispatch,
+    resolve,
 };
 use laconic_packs::all;
 use std::path::Path;
@@ -20,6 +21,19 @@ fn rules_fired(src: &str) -> Vec<&'static str> {
     };
     let (findings, _) = dispatch(path, src, &analysis, &Registry::default(), &rules);
     findings.into_iter().map(|f| f.rule).collect()
+}
+
+/// The full findings for one Go source, where the message text is what is under test.
+fn findings_for(src: &str) -> Vec<Finding> {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+    let analysis = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let rules = Rules {
+        block: all_block_rules(),
+        subject: all_subject_rules(),
+    };
+    dispatch(path, src, &analysis, &Registry::default(), &rules).0
 }
 
 const SRC: &str = include_str!("../testdata/go/pipeline.go");
@@ -66,11 +80,12 @@ fn a_directive_between_prose_and_its_declaration_keeps_doc_kind() {
     assert_eq!(block.kind, CommentKind::Doc);
 }
 
-/// An interface method is a `method_elem`, not a `field_declaration`. Missing from the documentable
-/// set, the comment above an exported interface method is Line kind — a Delete fix at gate tier
+/// Both of `interface_type`'s element kinds, since neither is a `field_declaration`: a method is a
+/// `method_elem` and an embedded interface is a `type_elem`. Missing from the documentable
+/// set, the comment above an exported interface member is Line kind — a Delete fix at gate tier
 /// with autofix **on**, so `laconic fix` deletes the godoc of a published API.
 #[test]
-fn an_interface_method_comment_is_a_doc_comment() {
+fn an_interface_element_comment_is_a_doc_comment() {
     let src = "package x\n\ntype Reader interface {\n\t// Read fills p.\n\tRead(p []byte) (int, error)\n}\n";
     let packs = all();
     let path = Path::new("x.go");
@@ -514,7 +529,8 @@ fn a_go_type_counts_what_it_declares() {
     let strukt = "package x\n\ntype Row struct {\n\tID string\n\tName string\n}\n";
     assert_eq!(members_of(strukt, "type Row"), 2);
 
-    // A grouped block and a single declaration are two grammar shapes; both are the same count.
+    // A grouped block and a single declaration each count what they declare. Only `var` nests its
+    // specs a level further down, in a `var_spec_list`; `const` lists them directly in both forms.
     let grouped = "package x\n\nconst (\n\tA = 1\n\tB = 2\n\tC = 3\n)\n";
     assert_eq!(members_of(grouped, "const ("), 3);
     let single = "package x\n\nconst A = 1\n";
@@ -523,6 +539,18 @@ fn a_go_type_counts_what_it_declares() {
     // Every other type form declares none, so only `docbloat`'s absolute cap reaches it.
     let alias = "package x\n\ntype ID string\n";
     assert_eq!(members_of(alias, "type ID"), 0);
+
+    // `var` is the shape that nests: its grouped form wraps the specs in a `var_spec_list`, which
+    // is the only reason `spec_count` descends at all. Exercising `const` alone leaves that branch
+    // untouched, and collapsing it to direct children then silently counts every grouped `var`
+    // block as zero members.
+    let grouped_var = "package x\n\nvar (\n\tA = 1\n\tB = 2\n\tC = 3\n)\n";
+    assert_eq!(members_of(grouped_var, "var ("), 3);
+    let single_var = "package x\n\nvar A = 1\n";
+    assert_eq!(members_of(single_var, "var A"), 1);
+    // A spec binds more than one name at a time, and each is a member.
+    let multi = "package x\n\nvar (\n\tA, B = 1, 2\n)\n";
+    assert_eq!(members_of(multi, "var ("), 1);
 }
 
 /// A `package_clause` declares no members, which is what keeps an ordinary package comment quiet
@@ -566,7 +594,8 @@ fn density_reaches_an_interface() {
 }
 
 /// `line_count` counts rows, not comments. A regression to counting comments halves the number
-/// `density`'s 8-line threshold and `docbloat`'s 15-line threshold are measured against.
+/// every line threshold is measured against. The values live on the constants; naming them here
+/// would be a second copy, and the last one went stale the first time the cap moved.
 #[test]
 fn line_count_counts_rows_of_a_multi_row_block_comment() {
     let packs = all();
@@ -581,4 +610,93 @@ fn line_count_counts_rows_of_a_multi_row_block_comment() {
         .expect("the block comment");
     assert_eq!(block.comments.len(), 1);
     assert_eq!(block.line_count(), 3);
+}
+
+/// Every numeric threshold, pinned at its own boundary — silent at the value, firing one past it.
+///
+/// Built *from* each constant, because a fixture stating a number is the thing that goes stale. The
+/// values themselves are pinned once, in the engine's own defaults test.
+#[test]
+fn each_threshold_fires_one_line_past_itself() {
+    // A subject declaring no members meets the cap alone, which isolates it from the ratio.
+    let alias_with = |lines: usize| {
+        let prose = (0..lines)
+            .map(|i| format!("// Line {i} of prose about the identifier below.\n"))
+            .collect::<String>();
+        format!("package x\n\n{prose}type ID string\n")
+    };
+    assert!(
+        !rules_fired(&alias_with(ABSOLUTE_DOC_LINES)).contains(&"docbloat"),
+        "the cap is the largest count that stays silent"
+    );
+    assert!(
+        rules_fired(&alias_with(ABSOLUTE_DOC_LINES + 1)).contains(&"docbloat"),
+        "one line past the cap must fire"
+    );
+
+    // One member is the only denominator at which the ratio decides anything the cap has not
+    // already decided: at two members the ratio's threshold has reached the cap.
+    let iface_with = |lines: usize| {
+        let prose = (0..lines)
+            .map(|i| format!("// Line {i} of prose about the interface below.\n"))
+            .collect::<String>();
+        format!("package x\n\n{prose}type S interface {{\n\tGet() error\n}}\n")
+    };
+    assert!(
+        !rules_fired(&iface_with(DOC_LINES_PER_MEMBER)).contains(&"docbloat"),
+        "at the ratio exactly, the rule is silent"
+    );
+    assert!(
+        rules_fired(&iface_with(DOC_LINES_PER_MEMBER + 1)).contains(&"docbloat"),
+        "one line past the ratio must fire, below the cap"
+    );
+    // The band where the ratio decides anything at all: above one member its threshold has already
+    // reached the cap, so a change to it moves nothing. Asserted through the constants so a
+    // calibration pass that closes the band is told, rather than finding the ratio quietly inert.
+    assert!(
+        (1..=1).any(|m: usize| m * DOC_LINES_PER_MEMBER < ABSOLUTE_DOC_LINES),
+        "the ratio reaches below the cap at one member, or it decides nothing anywhere"
+    );
+
+    // `density` counts non-doc commentary, so the run sits inside the interface body.
+    let commented_iface = |lines: usize| {
+        let prose = (0..lines)
+            .map(|i| format!("\t// Line {i} of running commentary.\n"))
+            .collect::<String>();
+        format!("package x\n\ntype S interface {{\n{prose}\n\tGet() error\n\tPut() error\n}}\n")
+    };
+    assert!(
+        !rules_fired(&commented_iface(DENSITY_MIN_COMMENT_LINES)).contains(&"density"),
+        "the floor is the largest count that stays silent"
+    );
+    assert!(
+        rules_fired(&commented_iface(DENSITY_MIN_COMMENT_LINES + 1)).contains(&"density"),
+        "one line past the floor must fire"
+    );
+}
+
+/// The cap-only sentence, which no fixture reached until this test.
+///
+/// `every_instruction_opens_with_the_change_to_make` compares first words, and both arms open with
+/// "shorten", so the suite could not tell them apart — while the cap carries the larger share of
+/// real findings. A subject declaring no members is the only way to reach this arm.
+#[test]
+fn the_cap_alone_names_no_denominator() {
+    let prose = (0..=ABSOLUTE_DOC_LINES)
+        .map(|i| format!("// Line {i} of prose about the identifier below.\n"))
+        .collect::<String>();
+    let src = format!("package x\n\n{prose}type ID string\n");
+    let message = findings_for(&src)
+        .into_iter()
+        .find(|f| f.rule == "docbloat")
+        .map(|f| f.instruction)
+        .expect("a 0-member subject over the cap fires docbloat");
+    assert!(
+        message.starts_with("shorten this doc comment:"),
+        "AC8: {message}"
+    );
+    assert!(
+        !message.contains("documenting"),
+        "a subject with no members has no denominator to name: {message}"
+    );
 }

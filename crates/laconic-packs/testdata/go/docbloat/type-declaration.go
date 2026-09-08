@@ -9,7 +9,8 @@ package docbloat
 // left the relative test dead on every Go type, const and var — the whole set
 // this pack deliberately makes documentable, and the reason the measurement is
 // the pack's answer rather than the engine's guess about where a body lives.
-// The absolute threshold is fifteen lines, and this is short of it on purpose.
+// This block is over the cap as well as over the ratio, so it is not evidence for the ratio
+// alone; a_one_method_interface_is_a_denominator is where that case is isolated.
 type Config struct {
 	N int
 }

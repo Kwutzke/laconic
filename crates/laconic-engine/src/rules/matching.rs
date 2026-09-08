@@ -19,9 +19,13 @@ pub fn normalise(body: &str) -> String {
 /// The body with inline code spans replaced by a space — a quotation is not a use, and prose about
 /// a rule contains that rule's terms. Replaced rather than removed, to keep the word boundary.
 ///
-/// An unterminated backtick strips nothing: one stray mark silencing the rest of a block is a worse
-/// failure than the quotation it guards against.
+/// An unterminated backtick strips nothing, and deciding parity *before* stripping is what provides
+/// that: pairing while emitting is already past the text it removed by the time it learns the block
+/// is unbalanced.
 pub fn strip_code_spans(body: &str) -> String {
+    if body.matches('`').count() % 2 == 1 {
+        return body.to_string();
+    }
     let mut out = String::with_capacity(body.len());
     let mut rest = body;
     while let Some(open) = rest.find('`') {
@@ -37,8 +41,10 @@ pub fn strip_code_spans(body: &str) -> String {
 
 /// The first deny-list term that appears in `body` at word boundaries, if any.
 ///
-/// Code spans come out first. This is the deny-list path only: `words` feeds `restate`, where a
-/// backticked identifier is a real mention of the symbol and must still count.
+/// Code spans come out first, and only here and in `task` — wherever the subject is a listed term,
+/// a backtick around it marks a mention rather than a use. `words` feeds `restate`, where a
+/// backticked identifier is a real mention of the symbol and must still count; `fileref` matches a
+/// path shape, which backticks are the ordinary way to write.
 pub fn first_match<'t>(body: &str, terms: &[&'t str]) -> Option<&'t str> {
     let haystack = normalise(&strip_code_spans(body)).to_lowercase();
     terms
@@ -135,7 +141,7 @@ mod tests {
     /// Every case here is a real finding laconic reported against its own source.
     #[test]
     fn a_term_inside_a_code_span_is_a_quotation() {
-        // `report.rs` — an example of narration, quoted in a comment about column arithmetic.
+        // From the column-arithmetic reporting code: a narration example quoted inside a span.
         assert_eq!(
             first_match(
                 "`x := \"日本\" // changed to use a map` reports four columns right",
@@ -143,7 +149,7 @@ mod tests {
             ),
             None
         );
-        // `pack_concerns.rs` — the span crosses a line break, which the block joins.
+        // From the pack-concern suite: the span crosses a line break, which the block joins.
         assert_eq!(
             first_match(
                 "leaving it out would make `<!-- changed to use a\nmap -->` invisible",
@@ -163,10 +169,29 @@ mod tests {
 
     /// One stray backtick must not silence the rest of the block — the failure would be worse than
     /// the quotation it is guarding against, and trivially evadable on purpose.
+    ///
+    /// Both sides of the stray mark, because only one of them is the position greedy pairing gets
+    /// right: a term *before* the unpaired tick survives whatever the loop does, since the loop
+    /// breaks there and flushes the remainder. A term after it is the case that was silently lost.
     #[test]
     fn an_unterminated_code_span_strips_nothing() {
         assert_eq!(
             first_match("we changed to a map ` and never closed it", &["changed to"]),
+            Some("changed to")
+        );
+        assert_eq!(
+            first_match(
+                "a stray ` mark; we changed to a map for `speed`",
+                &["changed to"]
+            ),
+            Some("changed to")
+        );
+        // Rust's double-backtick escape is the idiom that produces an odd count in real prose.
+        assert_eq!(
+            first_match(
+                "write `` ` `` to mean a tick; we changed to a map",
+                &["changed to"]
+            ),
             Some("changed to")
         );
     }

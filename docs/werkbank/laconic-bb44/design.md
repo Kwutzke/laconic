@@ -284,7 +284,7 @@ does not list.
 | Rule | Kinds | Fires on |
 |---|---|---|
 | `narration` | Line, Block — plus Doc at warn tier with a Rewrite fix | change-log and process language: *changed to*, *updated to*, *previously*, *as requested*, *now we*, *note that we*, *moved to*, *refactored to*, *this now*, *per your* |
-| `banner` | Line, Block — plus Doc at warn tier with a Rewrite fix | a stripped body that is only repeated punctuation, a `Step N:` sequence, or a standalone all-caps section label. Matching is over the body from pack concern 7, never the raw line: a raw-line test misses `// =====`, because the raw line begins with the comment marker. What matching the body costs is that a Markdown horizontal rule inside a doc comment is a hit — warn tier, and AC7 measures it |
+| `banner` | Line, Block — plus Doc at warn tier with a Rewrite fix | a stripped body that is only repeated punctuation, a `Step N:` sequence, or a label fenced on both sides — `--- helpers ---`, and a standalone all-caps `HELPERS`. Case is not the test; a label carrying a task marker belongs to `task` and is declined here, and a trailing comment is never a label. Matching is over the body from pack concern 7, never the raw line: a raw-line test misses `// =====`, because the raw line begins with the comment marker. What matching the body costs is that a Markdown horizontal rule inside a doc comment is a hit — warn tier, and AC7 measures it |
 
 **Gate tier, Delete fix, autofix off by default.** Exit non-zero; `laconic fix` leaves them for a
 human until the corpus run (section 8) justifies flipping the default.
@@ -314,17 +314,22 @@ unattended.
 
 | Rule | Kinds | Fires on |
 |---|---|---|
-| `density` | Line, Block | per subject: more than 8 comment lines **and** comment-to-statement ratio above 0.5 |
-| `docbloat` | Doc | over 15 lines, or over 3× the subject's body |
+| `density` | Line, Block | per subject: past `DENSITY_MIN_COMMENT_LINES` non-doc comment lines **and** above `DENSITY_MAX_RATIO` comment lines per member |
+| `docbloat` | Doc | over `ABSOLUTE_DOC_LINES`, or over `DOC_LINES_PER_MEMBER` × the members the subject declares |
 | `implInInterface` | Doc | a public subject's doc comment naming an identifier that is declared in this file and is not exported. A reference to another exported symbol is an ordinary cross-reference and is not a finding (decision 23 on `laconic#bb44`) |
 | `hedging` | all | *should work*, *for now*, *in most cases*, *if needed*, *probably*, *might need* |
 | `vague` | all | *handles the logic*, *does the necessary*, *various things*, *as appropriate*, *etc.* as a sentence ender |
 | `task` | all | TODO/FIXME/XXX/HACK with no issue reference. `TODO(KAT-123)` and `TODO(#456)` pass |
 | `deadIgnore` | all | an ignore directive whose named rule **ran and did not fire** on the block it protects. Never fires for a rule that was suppressed rather than evaluated |
 
-*Bounded claim:* the thresholds — 8 comment lines, ratio 0.5, 15 doc lines, 3× body — are the
-specification's initial values, not measurements. They are configurable, and the corpus run in
-section 8 is what turns them into calibrated values.
+*Bounded claim:* the thresholds are the specification's initial values, not measurements, and the
+corpus run in section 8 is what turns them into calibrated values. **The values are not repeated
+here.** They live on the constants in `rules/structural.rs` and are asserted in exactly one test;
+restating them in this table is what left it claiming a doc-line cap of fifteen for the whole of the
+session that measured it down to six.
+
+They are **not yet configurable**. Nothing reads a threshold from `laconic.toml`, because there is no
+`laconic.toml` — that is `laconic#9azt`, and until it lands a retune means editing a constant.
 
 ### Carve-outs
 
@@ -337,7 +342,7 @@ anything under `testdata/`, `fixtures/`, `vendor/`, `node_modules/`.
 | TS/JS | `/// <reference path=…>`, `//# sourceMappingURL=`, `@ts-ignore`, `@ts-expect-error`, `eslint-disable*`, `prettier-ignore`, webpack magic comments |
 | Python | `#!` shebang, `# type:`, `# noqa`, `# pragma: no cover`, `# -*- coding:` |
 | Rust | `// SAFETY:`, which clippy's `undocumented_unsafe_blocks` requires — deleting one breaks a lint. rustfmt and clippy are otherwise controlled by `#[…]` attributes, which are not comments and never reach a rule, so Rust's carve-outs are comment-borne conventions rather than tool directives |
-| Java | `// CHECKSTYLE:*`, `// NOPMD`. `@SuppressWarnings` is an annotation, not a comment |
+| Java | `// CHECKSTYLE:*`, `// NOPMD`, `// NOSONAR`, `// @formatter:`, `// spotless:`. `@SuppressWarnings` is an annotation, not a comment. No `$NON-NLS-`: Eclipse emits it only as a trailing comment, which no rule reaches, so the carve-out protected nothing |
 
 ## 6. Data flow
 

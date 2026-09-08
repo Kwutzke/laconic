@@ -30,17 +30,26 @@ const MIN_CODE_NODES: usize = 3;
 const MIN_SYMBOL_LEN: usize = 3;
 
 /// `docbloat`'s cap, applied whatever the subject declares. Six is the owner's ruling against the
-/// corpus; the specified 15 had no measurement behind it. Charter constraint 5 is the escape.
-const ABSOLUTE_DOC_LINES: usize = 6;
+/// corpus; the specified 15 had no measurement behind it.
+///
+/// A comment that genuinely earns more carries `laconic:ignore docbloat — <reason>`. Spelled out
+/// rather than referenced, because the reader who needs the escape has no tracker access.
+pub const ABSOLUTE_DOC_LINES: usize = 6;
 
-/// `docbloat`'s ratio, and `density`'s below it. Both carried over from the row-based tests they
-/// replaced — the denominator changed, the multipliers are still AC7's to calibrate.
-const DOC_LINES_PER_MEMBER: usize = 3;
+/// `docbloat`'s ratio, and `density`'s below it. Both carried over unchanged when the denominator
+/// stopped being rows of text; the corpus run is what calibrates them.
+///
+/// Coupled to [`ABSOLUTE_DOC_LINES`]: two members already reach the cap, so this decides firing at
+/// one member and nowhere else. Raising it to loosen the ratio disables the only band it has.
+pub const DOC_LINES_PER_MEMBER: usize = 3;
 
-/// `density` measures non-doc commentary, so it needs both a floor and a ratio: eight lines of
-/// running commentary is unremarkable in a long function and damning in a short one.
-const DENSITY_MIN_COMMENT_LINES: usize = 8;
-const DENSITY_MAX_RATIO: f64 = 0.5;
+/// `density` measures non-doc commentary, so it needs both a floor and a ratio: a long run is
+/// unremarkable in a long function and damning in a short one.
+///
+/// The floor is the largest count that stays *silent*; the rule first fires one line above it. Its
+/// sibling below is the opposite polarity, firing *above* its value.
+pub const DENSITY_MIN_COMMENT_LINES: usize = 8;
+pub const DENSITY_MAX_RATIO: f64 = 0.5;
 
 pub struct Restate;
 
@@ -164,28 +173,33 @@ impl BlockRule for DocBloat {
         "docbloat"
     }
 
-    /// Two tests that catch different failures, neither subsuming the other. **The cap is
-    /// unconditional** — it applies whether or not the subject declares members, and nothing earns
-    /// twenty lines in healthy code. The ratio is what reaches below it, to the five-line comment
-    /// on a one-member interface that no defensible cap would catch.
+    /// Two tests that catch different failures. **The cap is unconditional** — it applies whether
+    /// or not the subject declares members, and it is the only test a subject declaring none ever
+    /// meets. The ratio reaches below the cap at exactly one member, which is the four-line comment
+    /// on a one-member interface no defensible cap would catch; above one member the cap has
+    /// already fired. Both values live on the constants, not in this sentence.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
         let subject = ctx.subject?;
         let lines = ctx.block.line_count();
         let members = subject.member_count;
         let over_absolute = lines > ABSOLUTE_DOC_LINES;
+        // `members > 0` is load-bearing beyond the arithmetic: it is what keeps `members_phrase(0)`
+        // — "documenting 0 members" — off the relative arm below.
         let over_relative = members > 0 && lines > members.saturating_mul(DOC_LINES_PER_MEMBER);
         if !over_absolute && !over_relative {
             return None;
         }
-        // Which test fired decides what the second half says, because they are different failures.
-        // Neither sentence says "move the rest into the body" any more: that instruction taught a
-        // repairing agent to relocate prose into the function it documented, where `density` then
-        // reported it — one rule instructing what another punishes.
+        // Which test fired decides everything after the line count, the naming of the denominator
+        // included, because they are different failures. Neither sentence says "move the rest into
+        // the body" any more: that instruction taught a repairing agent to relocate prose into the
+        // function it documented, where `density` then reported it — one rule instructing what
+        // another punishes. Neither invites restructuring the subject either: the denominator is
+        // the agent's to change, and inflating it reaches green with the comment untouched.
         Some(RuleHit::new(
             ctx.block.span.clone(),
             if over_relative {
                 format!(
-                    "shorten this doc comment: {lines} lines documenting {} — keep only what a caller cannot derive from the code. Long explanatory prose can signal the code itself is hard to follow; consider restructuring it.",
+                    "shorten this doc comment: {lines} lines documenting {} — keep only what a caller cannot derive from the code",
                     members_phrase(members)
                 )
             } else {
@@ -244,8 +258,10 @@ impl SubjectRule for Density {
         "density"
     }
 
-    /// More than eight comment lines **and** a comment-to-member ratio above 0.5. Both thresholds
-    /// are the specification's stated values with no measurement behind them.
+    /// Past [`DENSITY_MIN_COMMENT_LINES`] **and** above [`DENSITY_MAX_RATIO`]. Both are the
+    /// specification's stated values with no measurement behind them. The ratio is the weaker of the
+    /// two by a wide margin: with the floor where it is, suppressing a finding by ratio alone needs
+    /// a subject declaring at least eighteen members, so on ordinary code the floor decides.
     fn check(&self, ctx: &SubjectContext) -> Option<RuleHit> {
         // Doc kind is excluded, and the reason is not positional: `docbloat` is the rule that
         // measures a doc comment against its subject, so counting one here would measure the same
@@ -295,4 +311,23 @@ pub fn structural_block_rules() -> Vec<Box<dyn BlockRule>> {
 /// `density` alone.
 pub fn structural_subject_rules() -> Vec<Box<dyn SubjectRule>> {
     vec![Box::new(Density)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shipped values, in the one place that states them.
+    ///
+    /// Sources built *from* a constant pin the behaviour and move with any change, which leaves the
+    /// value itself unpinned — the cap could be set back to what it was measured away from with the
+    /// suite green. So the digits are asserted once, here, and changing one is a decision rather
+    /// than an edit. Restating them elsewhere is what went stale four times when the cap moved.
+    #[test]
+    fn the_shipped_thresholds_are_the_calibrated_defaults() {
+        assert_eq!(ABSOLUTE_DOC_LINES, 6, "owner's ruling against the corpus");
+        assert_eq!(DOC_LINES_PER_MEMBER, 3, "carried over, uncalibrated");
+        assert_eq!(DENSITY_MIN_COMMENT_LINES, 8, "silent at 8, fires at 9");
+        assert_eq!(DENSITY_MAX_RATIO, 0.5, "carried over, uncalibrated");
+    }
 }

@@ -60,7 +60,10 @@ fn every_claimed_extension_resolves() {
         ("a.tsx", "typescript"),
         ("a.js", "typescript"),
         ("a.mjs", "typescript"),
+        ("a.cjs", "typescript"),
         ("a.jsx", "typescript"),
+        ("a.mts", "typescript"),
+        ("a.cts", "typescript"),
     ];
     for (file, pack_name) in expected {
         let (pack, _) = resolve(&packs, Path::new(file)).unwrap_or_else(|| panic!("{file}"));
@@ -298,9 +301,25 @@ fn java_visibility_has_four_answers() {
 /// the declaration it documents.
 #[test]
 fn a_jsdoc_comment_reaches_through_the_export_statement() {
-    let src = "/** Documents it. */\nexport function f(): void {}\n";
-    for name in ["x.ts", "x.tsx", "x.js"] {
+    // Per grammar, because `: void` is a TypeScript return-type annotation and the JavaScript
+    // grammar has no node for one. Running one source through all three asserted the JS case
+    // against a file that grammar rejects, passing on error-recovery output.
+    for (name, src) in [
+        (
+            "x.ts",
+            "/** Documents it. */\nexport function f(): void {}\n",
+        ),
+        (
+            "x.tsx",
+            "/** Documents it. */\nexport function f(): void {}\n",
+        ),
+        ("x.js", "/** Documents it. */\nexport function f() {}\n"),
+    ] {
         let a = analyse_str(name, src);
+        assert!(
+            !a.has_error_nodes,
+            "{name}: the source must parse under its own grammar"
+        );
         let doc = block_with(&a, "Documents it");
         assert_eq!(doc.kind, CommentKind::Doc, "{name}");
         let subject = &a.subjects[doc.subject.unwrap_or_else(|| panic!("{name}: no subject"))];
@@ -339,4 +358,34 @@ fn typescript_declared_symbols_include_bindings() {
     };
     assert_eq!(vis("Shown"), Visibility::Exported);
     assert_eq!(vis("hidden"), Visibility::Restricted("module".to_string()));
+}
+
+/// Concern 9 for TypeScript, which had none while Go had three.
+///
+/// The allowlist decides whether `docbloat`'s ratio and `density` engage at all, so dropping
+/// `interface_body` left a documented interface counting zero members with the suite green. The
+/// conformance module catches an entry that cannot occur; this catches one that occurs uncounted.
+#[test]
+fn a_typescript_type_counts_what_it_declares() {
+    let members_of = |name: &str, src: &str, head: &str| {
+        let a = analyse_str(name, src);
+        a.subjects
+            .iter()
+            .find(|s| src[s.span.clone()].starts_with(head))
+            .unwrap_or_else(|| panic!("{name}: no subject starting {head:?}"))
+            .member_count
+    };
+
+    let iface = "export interface Store {\n  get(k: string): void;\n  put(k: string): void;\n}\n";
+    assert_eq!(members_of("x.ts", iface, "interface Store"), 2);
+
+    let class = "export class Row {\n  id = \"\";\n  name = \"\";\n  touch(): void {}\n}\n";
+    assert_eq!(members_of("x.ts", class, "class Row"), 3);
+
+    let enom = "export enum Mode {\n  Retry,\n  Fail,\n}\n";
+    assert_eq!(members_of("x.ts", enom, "enum Mode"), 2);
+
+    // A type alias names no `body` field at all, so it reaches the count through neither branch.
+    let alias = "export type ID = string;\n";
+    assert_eq!(members_of("x.ts", alias, "type ID"), 0);
 }

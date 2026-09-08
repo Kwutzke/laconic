@@ -2,6 +2,8 @@
 
 pub mod common;
 pub mod go;
+#[cfg(test)]
+mod grammar_conformance;
 pub mod java;
 pub mod python;
 pub mod rust;
