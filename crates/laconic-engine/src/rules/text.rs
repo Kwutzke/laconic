@@ -344,10 +344,10 @@ fn source_path<'w>(word: &'w str, extensions: &[&'static str]) -> Option<&'w str
     // Every punctuation mark that can sit against a path in prose, on either side: quotes and
     // brackets open as well as close.
     let candidate = word.trim_matches(['.', '(', ')', '[', ']', ':', ',', ';', '"', '\'', '`']);
-    // A path inside a URL is a link to something outside this repository — commonly the upstream
-    // source a file was adapted from. No symbol here replaces it, so the rule's own instruction
-    // cannot be followed, and the reference is the useful kind: it does not go stale on a local
-    // rename because it does not point at this tree.
+    // A path inside a URL is a link to something outside this repository — usually the upstream
+    // source a file derives from. No symbol here replaces it, so the rule's own instruction cannot
+    // be followed, and the reference is the useful kind: it does not go stale on a local rename,
+    // because it does not point at this tree.
     if candidate.contains("://") {
         return None;
     }
@@ -489,8 +489,12 @@ mod tests {
     fn a_backticked_path_is_still_a_path() {
         let found = words_with_punctuation("Mirrors the shape in `internal/parser.go`.")
             .into_iter()
-            .find(|w| looks_like_source_path(w, &["go"]));
-        assert_eq!(found, Some("`internal/parser.go`."));
+            .find_map(|w| source_path(w, &["go"]));
+        assert_eq!(
+            found,
+            Some("internal/parser.go"),
+            "the backticks are the prose's, not the path's"
+        );
     }
 
     /// An unterminated `(` is not a reference. Same shape as the backtick parity rule: a delimiter
@@ -546,7 +550,7 @@ mod tests {
         ] {
             let found = words_with_punctuation(body)
                 .into_iter()
-                .find(|w| looks_like_source_path(w, &["go"]));
+                .find_map(|w| source_path(w, &["go"]));
             assert!(found.is_some(), "no path found in {body:?}");
         }
     }
