@@ -119,10 +119,25 @@ pub fn referenced_as_code(body: &str, name: &str) -> bool {
 /// Being on this list is not an exemption: [`referenced_as_code`] still fires on `lock()` and
 /// `` `page` ``. The list decides one thing only, which is whether a bare occurrence in prose is
 /// evidence of anything.
+///
+/// A plural counts as its singular, so the list carries singulars only. Prose uses whichever number
+/// the sentence needs — "report what the files now say" — while the identifier is named once, and a
+/// list holding both forms of some words and one form of others is a list with two rules in it.
+///
+/// Both this and the stripping below are deliberately permissive, on the owner's ruling that this
+/// rule should miss a finding rather than produce a noisy one.
 pub fn is_common_word(name: &str) -> bool {
-    COMMON_WORDS
-        .binary_search(&name.to_lowercase().as_str())
-        .is_ok()
+    let lower = name.to_lowercase();
+    let known = |w: &str| COMMON_WORDS.binary_search(&w).is_ok();
+    if known(&lower) {
+        return true;
+    }
+    // `files` → `file`, then `matches` → `match`. Nothing is stripped twice, so `status` reduces to
+    // `statu` and stops there rather than reaching `stat`.
+    match lower.strip_suffix('s') {
+        Some(singular) => known(singular) || singular.strip_suffix('e').is_some_and(known),
+        None => false,
+    }
 }
 
 /// Common English words, sorted for binary search.
@@ -525,7 +540,6 @@ const COMMON_WORDS: &[&str] = &[
     "present",
     "press",
     "price",
-    "prices",
     "print",
     "private",
     "problem",
@@ -597,7 +611,6 @@ const COMMON_WORDS: &[&str] = &[
     "route",
     "row",
     "rule",
-    "rules",
     "run",
     "safe",
     "same",
@@ -875,6 +888,18 @@ mod tests {
         assert!(!is_common_word("buildSearchInfos"));
         assert!(!is_common_word("knownSortFields"));
         assert!(!is_common_word("snapshoter"));
+    }
+
+    /// A plural counts as its singular, so the list carries singulars only.
+    #[test]
+    fn a_plural_counts_as_its_singular() {
+        assert!(is_common_word("files"));
+        assert!(is_common_word("packs"));
+        assert!(is_common_word("rules"));
+        assert!(is_common_word("matches"), "the -es plural too");
+        // The stripping runs once, so a word merely ending in `s` is not reduced twice.
+        assert!(!is_common_word("stats"), "`stat` is not on the list");
+        assert!(!is_common_word("externalIDCandidates"));
     }
 
     /// AC4, both halves.
