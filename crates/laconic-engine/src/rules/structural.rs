@@ -91,15 +91,11 @@ impl BlockRule for Detached {
         "detached"
     }
 
-    /// Purely structural, with no text test at all — which makes it the most destructive rule in
-    /// the set to run unattended, and is why it ships autofix off. *Detached* includes "nothing
-    /// follows", so `// intentionally empty` at the end of a block is structurally identical to an
-    /// orphan.
+    /// Purely structural, with no text test at all, which is why it ships autofix off. *Detached*
+    /// includes "nothing follows", so `// intentionally empty` closing a block is an orphan here.
     ///
-    /// **A banner is reported by `banner` alone.** A section label is detached by construction, so
-    /// once `banner` learned the fenced form the two rules fired together on 43 comments in one
-    /// corpus, with two gate-tier instructions: delete it, and move it onto the code below. The
-    /// second is unfollowable — there is no code a `--- helpers ---` divider describes.
+    /// A banner is reported by `banner` alone: a label is detached by construction, and there is no
+    /// code a `--- helpers ---` divider could be moved onto.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
         if is_banner(&ctx.block.body(), ctx.block.attachment) {
             return None;

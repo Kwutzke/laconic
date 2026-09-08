@@ -78,13 +78,11 @@ impl BlockRule for Banner {
         "banner"
     }
 
-    /// Matching is over the body from pack concern 7, never the raw line: a raw-line test misses
-    /// `// =====` because the raw line begins with the comment marker.
+    /// Matching is over the body from concern 7, never the raw line, which begins with the marker.
     ///
-    /// A trailing comment is never a label. It annotates the code on its line, where a section
-    /// label divides a file — and this rule ships autofix **on**, so the distinction is what stands
-    /// between `// ACTA, ELEKTRA, ALEA` beside a list of ids and `laconic fix` deleting the only
-    /// record of which id is which.
+    /// A trailing comment is never a label: it annotates the code on its line. This rule ships
+    /// autofix **on**, so that distinction is what stands between `// ACTA, ELEKTRA` beside a list
+    /// of ids and `laconic fix` deleting the only record of which id is which.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
         let body = ctx.block.body();
         let labels_allowed = ctx.block.attachment != Attachment::AttachedTrailing;
@@ -96,10 +94,8 @@ impl BlockRule for Banner {
     }
 }
 
-/// Whether `banner` would report this block — the precedence test `detached` applies.
-///
-/// Exposed rather than duplicated: a second copy of the predicate is a second thing to keep in step,
-/// and the two rules disagreeing is exactly the double-reporting this exists to stop.
+/// Whether `banner` would report this block — the precedence test `detached` applies. Exposed
+/// rather than duplicated, since the two predicates disagreeing is the double-reporting it prevents.
 pub fn is_banner(body: &str, attachment: Attachment) -> bool {
     banner_reason(body, attachment != Attachment::AttachedTrailing).is_some()
 }
@@ -132,16 +128,12 @@ fn banner_reason(body: &str, labels_allowed: bool) -> Option<&'static str> {
     None
 }
 
-/// A label fenced by rule characters on **both** sides — `--- helpers ---`, `=== Setup ===`,
-/// `--- XML element types (PIM Stammdaten format) ---`.
+/// A label fenced on **both** sides — `--- helpers ---`, `=== Setup ===`. Case is not the test:
+/// reading all-caps as the signal missed 58 of 85 real banners in one corpus, every one a
+/// mixed-case label in dashes. Nobody writes prose wrapped in `---`.
 ///
-/// Case is not the test here, and that is the point: `is_section_label` reads all-caps as the signal
-/// and so missed 58 of 85 real banners in one corpus, every one of them a mixed-case label in
-/// dashes. Nobody writes prose wrapped in `---`, so the fence is the signal.
-///
-/// Both sides are required. A line that opens with a fence and then runs on — `--- Upsert variants,
-/// ported verbatim from pgloadv2` — is a heading with content after it, and content is what this
-/// rule must not delete.
+/// Both sides are required, so a heading that runs on into content is left alone — content is what
+/// this rule must not delete.
 fn is_fenced_label(line: &str) -> bool {
     let line = line.trim();
     let fence =
@@ -409,13 +401,11 @@ mod tests {
         assert!(!looks_like_source_path("config.json", &["go"]));
     }
 
-    /// This test and the ones below it come from `cargo mutants` survivors: each line ran under
-    /// the existing tests and no test would have noticed its behaviour changing. Coverage called
-    /// all of it green.
+    /// This test and the ones below it pin `cargo mutants` survivors — lines coverage called green
+    /// that no test would have noticed changing.
     ///
-    /// The trim is what lets a decorated task marker reach `task` instead of `banner`. Without it
-    /// `-- TODO --` is a section label, and two rules report the same comment with two different
-    /// instructions.
+    /// The trim is what lets a decorated task marker reach `task` instead of `banner`: without it
+    /// `-- TODO --` is a section label, and two rules report one comment.
     #[test]
     fn a_decorated_task_marker_is_not_a_section_label() {
         assert!(banner_reason(" -- TODO --", true).is_none());

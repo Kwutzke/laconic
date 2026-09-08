@@ -1,12 +1,7 @@
-//! Deny-list matching.
+//! Deny-list matching. AC4 is decided here rather than in each rule.
 //!
-//! AC4 is decided here, not in each rule: matching is case-insensitive and respects word
-//! boundaries, so `previously` does not match inside `previouslyKnownAs` and a term never fires on
-//! a longer word that merely contains it.
-//!
-//! Hand-rolled rather than regex-backed. Every term in the set is a literal phrase, so the whole
-//! requirement is "find this phrase at word boundaries" — and a regex dependency buys nothing but a
-//! second syntax in which a term can be wrong.
+//! Hand-rolled rather than regex-backed: every term is a literal phrase, so a regex dependency buys
+//! nothing but a second syntax in which a term can be wrong.
 
 /// A word character for boundary purposes. A phrase may contain spaces and punctuation; what must
 /// not touch it on either side is a letter, digit or underscore.
@@ -21,14 +16,11 @@ pub fn normalise(body: &str) -> String {
     body.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// The body with inline code spans replaced by a space — a quotation is not a use.
+/// The body with inline code spans replaced by a space — a quotation is not a use, and prose about
+/// a rule contains that rule's terms. Replaced rather than removed, to keep the word boundary.
 ///
-/// Prose *about* a term contains the term. Six of laconic's own findings were this: a doc comment
-/// explaining what `task` does was reported as a task, and one explaining the deny list was reported
-/// as narration. Replacing rather than deleting keeps the word boundary on each side.
-///
-/// An unterminated backtick strips nothing. One stray mark would otherwise silence every rule from
-/// there to the end of the block, which is a worse failure than the one this prevents.
+/// An unterminated backtick strips nothing: one stray mark silencing the rest of a block is a worse
+/// failure than the quotation it guards against.
 pub fn strip_code_spans(body: &str) -> String {
     let mut out = String::with_capacity(body.len());
     let mut rest = body;
