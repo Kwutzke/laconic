@@ -337,6 +337,37 @@ impl Registry {
     }
 }
 
+/// Which rule yields to which, when both fire on one block.
+///
+/// Three cases now, and the third is why this is a table rather than a third hand-written exclusion
+/// inside a rule. The first two were written as cross-rule calls — `detached` asking `banner`
+/// whether it would fire — and that shape costs a rule knowing another rule's predicate, keeps two
+/// copies of it in step, and hides the whole precedence graph inside the rules that lose.
+///
+/// Read as: the rule on the left is dropped when any rule on the right fired on the same block.
+/// Precedence is per block and only among rules that actually fired, so nothing here changes what a
+/// rule reports on its own.
+///
+/// **`banner` yielding to `task` is deliberately not here** and stays a gate inside `banner_reason`.
+/// This table drops a finding after the fact, which is weaker than what that gate does: it stands
+/// the *label branch* down, so `Step 1: TODO` — a step label rather than a section label — keeps
+/// reporting `banner` alongside `task`, and no label form added later can opt out of the check.
+/// Expressing it here would silence the step case too, which no evidence asked for.
+const PRECEDENCE: &[(&str, &[&str])] = &[
+    // A label is detached by construction, and there is no code a `--- helpers ---` divider could
+    // be moved onto. Commented-out code is detached for the same reason: both winners say delete
+    // it, while `detached` would say move it somewhere there is nothing to move it to.
+    ("detached", &["banner", "commentedOutCode"]),
+];
+
+/// The rules that supersede `id`, or an empty slice.
+pub fn superseded_by(id: &str) -> &'static [&'static str] {
+    PRECEDENCE
+        .iter()
+        .find(|(rule, _)| *rule == id)
+        .map_or(&[], |(_, by)| *by)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct UnknownRule(pub String);
 
@@ -416,6 +447,36 @@ mod tests {
             .map(|e| e.id)
             .collect();
         assert_eq!(only_file_scoped, vec!["implInInterface"]);
+    }
+
+    /// Every id in the precedence table is a rule that exists, on both sides.
+    ///
+    /// A typo here is silent in the worst way: the loser never yields, and the double-reporting the
+    /// entry was written to stop comes back with nothing to say it did.
+    #[test]
+    fn the_precedence_table_names_only_real_rules() {
+        let registry = Registry::default();
+        for (loser, winners) in PRECEDENCE {
+            assert!(registry.get(loser).is_some(), "no rule {loser:?}");
+            for winner in *winners {
+                assert!(registry.get(winner).is_some(), "no rule {winner:?}");
+                assert_ne!(loser, winner, "a rule cannot supersede itself");
+            }
+        }
+    }
+
+    /// Precedence is one-way. Two rules that each supersede the other would drop both findings and
+    /// report nothing at all, which is the one outcome worse than reporting twice.
+    #[test]
+    fn precedence_has_no_cycles() {
+        for (loser, winners) in PRECEDENCE {
+            for winner in *winners {
+                assert!(
+                    !superseded_by(winner).contains(loser),
+                    "{loser} and {winner} supersede each other"
+                );
+            }
+        }
     }
 
     #[test]

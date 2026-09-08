@@ -46,6 +46,8 @@ pub fn dispatch(
     let mut ran: BTreeSet<(usize, &'static str)> = BTreeSet::new();
     let mut fired: BTreeSet<(usize, &'static str)> = BTreeSet::new();
 
+    // Reused across blocks rather than allocated per block; drained at the end of each.
+    let mut hits: Vec<(&'static str, Disposition, crate::rule::RuleHit)> = Vec::new();
     for (bi, block) in analysis.blocks.iter().enumerate() {
         for rule in &rules.block {
             let Some(entry) = registry.get(rule.id()).filter(|e| e.enabled) else {
@@ -89,12 +91,27 @@ pub fn dispatch(
                 src,
             };
             if let Some(hit) = rule.check(&ctx) {
-                fired.insert((bi, entry.id));
-                pending.push(Pending {
-                    block: Some(bi),
-                    finding: build(file, src, entry.id, disposition, hit),
-                });
+                hits.push((entry.id, disposition, hit));
             }
+        }
+
+        // Precedence is resolved here, over the block's own hits, and **before `fired` is
+        // recorded**. A superseded rule did not fire: that is what keeps `deadIgnore` correct,
+        // since a directive naming the loser is protecting nothing and should be reported as dead
+        // exactly as it was when the loser declined by asking the winner's predicate directly.
+        let winners: Vec<&'static str> = hits.iter().map(|(id, _, _)| *id).collect();
+        for (id, disposition, hit) in hits.drain(..) {
+            if crate::registry::superseded_by(id)
+                .iter()
+                .any(|w| winners.contains(w))
+            {
+                continue;
+            }
+            fired.insert((bi, id));
+            pending.push(Pending {
+                block: Some(bi),
+                finding: build(file, src, id, disposition, hit),
+            });
         }
     }
 

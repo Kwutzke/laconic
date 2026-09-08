@@ -8,7 +8,6 @@ use crate::domain::{Attachment, CommentKind};
 use crate::pack::split_identifier;
 use crate::rule::{BlockContext, BlockRule, RuleHit, SubjectContext, SubjectRule};
 use crate::rules::matching::words;
-use crate::rules::text::is_banner;
 
 /// Words carrying no content for `restate`'s subset test. Without removal, every comment contains
 /// `the` and no comment is ever a subset of anything.
@@ -103,12 +102,11 @@ impl BlockRule for Detached {
     /// Purely structural, with no text test at all, which is why it ships autofix off. *Detached*
     /// includes "nothing follows", so `// intentionally empty` closing a block is an orphan here.
     ///
-    /// A banner is reported by `banner` alone: a label is detached by construction, and there is no
-    /// code a `--- helpers ---` divider could be moved onto.
+    /// This rule yields to `banner` and to `commentedOutCode`, and says so in the registry's
+    /// precedence table rather than here. It used to ask `banner`'s own predicate whether it would
+    /// fire, which is a rule holding another rule's test — two copies to keep in step, and the
+    /// precedence graph readable only from the rule that loses.
     fn check(&self, ctx: &BlockContext) -> Option<RuleHit> {
-        if is_banner(&ctx.block.body(), ctx.block.attachment) {
-            return None;
-        }
         (ctx.block.attachment == Attachment::Detached).then(|| {
             RuleHit::new(
                 ctx.block.span.clone(),

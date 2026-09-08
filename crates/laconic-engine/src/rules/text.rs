@@ -94,12 +94,6 @@ impl BlockRule for Banner {
     }
 }
 
-/// Whether `banner` would report this block — the precedence test `detached` applies. Exposed
-/// rather than duplicated, since the two predicates disagreeing is the double-reporting it prevents.
-pub fn is_banner(body: &str, attachment: Attachment) -> bool {
-    banner_reason(body, attachment != Attachment::AttachedTrailing).is_some()
-}
-
 fn banner_reason(body: &str, labels_allowed: bool) -> Option<&'static str> {
     let lines: Vec<&str> = body
         .lines()
