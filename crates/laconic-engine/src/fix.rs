@@ -98,7 +98,8 @@ fn deletion_range(src: &str, block: &CommentBlock, policy: BlankLinePolicy) -> R
         let mut cursor = end;
         while blank_below(src, cursor) {
             let next = line_end(src, cursor);
-            // The last blank of the run stays: collapsing is to one, not to none.
+            // Stop advancing once the line after `next` is code: `cursor` is then on the run's last
+            // blank, which the line below this loop consumes along with the rest.
             if !blank_below(src, next) {
                 break;
             }
