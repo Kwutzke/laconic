@@ -51,9 +51,15 @@ pub const DOC_LINES_PER_MEMBER: usize = 3;
 /// reported 2670 findings against 411 dividing by code lines. The floor was compensating for the
 /// denominator, so fixing the denominator retired it.
 ///
-/// Calibrated on that corpus at 0.25, where a hand-judged sample of fifteen ran 13/15. This is
-/// deliberately stricter: an `laconic:ignore density — <reason>` on the subject that earns its
-/// commentary beats a threshold permissive enough to never ask.
+/// 0.25 is where that corpus calibrated, and 0.2 is one step stricter than it: the owner's ruling,
+/// on the view that an `laconic:ignore density — <reason>` on the subject that earns its commentary
+/// beats a threshold permissive enough never to ask.
+///
+/// **The hand-judged samples behind those two numbers are not comparable.** 13/15 at 0.25 was
+/// measured while `density` still counted a declaration member's documentation, so the population
+/// held easy true positives — restated field names, section banners. On what the rule reports now,
+/// which is 90% function bodies, a fresh sample of fifteen ran about half, and every miss was a why
+/// in a function complex enough to need one.
 pub const DENSITY_MAX_RATIO: f64 = 0.2;
 
 pub struct Restate;
