@@ -43,15 +43,17 @@ pub(crate) const DOCUMENTABLE_ANYWHERE: &[&str] = &[
     // it here the block is Line kind, which carries a Delete fix at gate tier with autofix on —
     // `laconic fix` would delete a package comment that tripped `narration` or `banner`.
     "package_clause",
-    // A spec inside a grouped `const (…)` or `var (…)` is its own godoc surface — pkg.go.dev
-    // renders the comment above each constant, not just the one above the block. The declarations
-    // below are documentable only at file scope, which left the per-constant comment Line kind:
-    // counted by `density` as running commentary, measured by `docbloat` never, and carrying a
-    // Delete fix at gate tier with autofix on. Neither spec kind occurs anywhere but inside its
-    // own declaration, so unlike `type_elem` this needs no scoping.
-    "const_spec",
-    "var_spec",
 ];
+
+/// Specs inside a grouped declaration, which carry a godoc comment only where the declaration does.
+///
+/// pkg.go.dev renders the comment above each constant, not only the one above the block, so a spec
+/// is its own godoc surface — but only at file scope, for the reason
+/// [`DOCUMENTABLE_AT_FILE_SCOPE`] exists: a `var` or `const` inside a function body is an ordinary
+/// statement, and a comment above one documents nothing public. Listed unconditionally these made
+/// every local variable a subject in its own right, and `density` reported a warn finding on a
+/// commented map literal three lines long.
+pub(crate) const DOCUMENTABLE_SPECS: &[&str] = &["const_spec", "var_spec"];
 
 /// Declarations that carry a godoc comment only at file scope. `var`, `const` and `type` are also
 /// ordinary statements inside a function body, where a comment above one documents nothing public.
@@ -65,8 +67,27 @@ fn is_documentable(node: Node) -> bool {
     if node.kind() == "type_elem" {
         return node.parent().is_some_and(|p| p.kind() == "interface_type");
     }
+    if DOCUMENTABLE_SPECS.contains(&node.kind()) {
+        return enclosing_declaration_is_at_file_scope(node);
+    }
     DOCUMENTABLE_AT_FILE_SCOPE.contains(&node.kind())
         && node.parent().is_some_and(|p| p.kind() == "source_file")
+}
+
+/// Whether the declaration a spec belongs to sits at file scope.
+///
+/// Walked rather than tested at a fixed depth: `var` wraps its specs in a `var_spec_list` while
+/// `const` lists them as direct children, so the declaration is one or two levels up depending on
+/// which keyword it is.
+fn enclosing_declaration_is_at_file_scope(node: Node) -> bool {
+    let mut current = node;
+    while let Some(parent) = current.parent() {
+        if DOCUMENTABLE_AT_FILE_SCOPE.contains(&parent.kind()) {
+            return parent.parent().is_some_and(|p| p.kind() == "source_file");
+        }
+        current = parent;
+    }
+    false
 }
 
 pub struct GoPack;

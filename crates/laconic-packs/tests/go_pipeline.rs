@@ -809,3 +809,42 @@ fn a_grouped_spec_comment_is_a_doc_comment() {
         .expect("the comment is extracted");
     assert_eq!(block.kind, CommentKind::Doc);
 }
+/// A spec is a godoc surface only where its declaration is. `var`, `const` and `type` are also
+/// ordinary statements inside a function body, where a comment above one documents nothing public —
+/// the reason `DOCUMENTABLE_AT_FILE_SCOPE` exists. Listed unconditionally the spec kinds made every
+/// local variable a subject in its own right, and `density` reported on a three-line map literal.
+#[test]
+fn a_spec_inside_a_function_body_is_not_documentable() {
+    let local = "package x\n\ntype Handler int\n\nfunc run() error {\n\tvar handlers = map[string]Handler{\n\t\t// the fallback used when the key is absent\n\t\t\"\": 0,\n\t}\n\t_ = handlers\n\treturn nil\n}\n";
+    assert!(
+        !rules_fired(local).contains(&"density"),
+        "a local var is not a subject; got {:?}",
+        rules_fired(local)
+    );
+
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+    let a = analyse(pack, grammar, path, local, &Config::unrestricted()).expect("analysable");
+    let block = a
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("fallback"))
+        .expect("the comment is extracted");
+    assert_ne!(
+        block.kind,
+        CommentKind::Doc,
+        "a comment inside a function body documents nothing public"
+    );
+
+    // The file-scope half of the same carve-out, so neither arm can be deleted with the suite
+    // green: there the spec **is** the godoc surface.
+    let scoped = "package x\n\nconst (\n\t// ModeRequired rejects a request carrying no token.\n\tModeRequired = iota\n)\n";
+    let b = analyse(pack, grammar, path, scoped, &Config::unrestricted()).expect("analysable");
+    let block = b
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("ModeRequired"))
+        .expect("the comment is extracted");
+    assert_eq!(block.kind, CommentKind::Doc);
+}
