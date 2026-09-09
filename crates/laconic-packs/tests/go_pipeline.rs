@@ -865,7 +865,7 @@ fn the_restructuring_note_is_separate_and_only_well_past_the_threshold() {
         .expect("density fires on 1.0");
     let note = f.note.expect("well past the threshold carries the note");
     assert!(
-        note.starts_with("comments say why, not what"),
+        note.starts_with("most code needs no comment"),
         "got {note:?}"
     );
     assert!(

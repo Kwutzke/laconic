@@ -68,9 +68,10 @@ pub const DENSITY_MAX_RATIO: f64 = 0.2;
 /// survives that repair is evidence about the code. It is a note rather than part of the
 /// instruction because the consumer executes instructions — told to restructure, an agent reaches
 /// green fastest by adding code, which grows the denominator and leaves every comment in place.
-const RESTRUCTURE_NOTE: &str = "comments say why, not what — one that still seems necessary here is \
-often naming or structure asking to be fixed. Repair the comment first; report the restructuring \
-rather than doing it to satisfy this finding.";
+const RESTRUCTURE_NOTE: &str = "most code needs no comment; one that earns its place says why, not \
+what. If it still seems necessary here, that is usually naming or structure asking to be fixed — \
+repair the comment first, and report the restructuring rather than doing it to satisfy this \
+finding.";
 
 /// How far past its threshold a subject must be before [`RESTRUCTURE_NOTE`] is attached.
 ///
