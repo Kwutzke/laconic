@@ -357,6 +357,7 @@ fn build(
         tier: disposition.tier,
         fix: disposition.fix,
         instruction: hit.instruction,
+        note: hit.note,
         suppressed: false,
     }
 }

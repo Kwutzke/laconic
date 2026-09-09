@@ -46,8 +46,14 @@ running it from a subdirectory still covers the branch. It cannot be combined wi
 
 `--format machine` is the shape to consume from anything that is not a person: one tab-separated
 record per finding carrying the rule, file, byte span, line, column, tier and fix shape, then an
-indented `instruction` line. The byte span is there so an agent applies a deletion without
-re-deriving the range from the instruction text.
+indented `instruction` line, and sometimes an indented `note` line after it. The byte span is there
+so an agent applies a deletion without re-deriving the range from the instruction text.
+
+**The `note` line is read, not executed.** `density` and `docbloat` attach one where a subject is
+well past its threshold, to say that a comment which still looks necessary after the repair is
+usually naming or structure asking to be fixed. It is deliberately not part of the instruction: told
+to restructure, the cheapest path to a clean run is to add code, which grows the denominator and
+leaves every comment in place. Repair the comment; report the restructuring.
 
 ## The fifteen rules
 

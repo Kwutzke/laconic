@@ -19,6 +19,13 @@ pub struct Finding {
     pub tier: Tier,
     pub fix: FixShape,
     pub instruction: String,
+    /// A hint for the reader, never an instruction for the agent.
+    ///
+    /// Separate from `instruction` because the consumer executes instructions: a restructuring hint
+    /// folded into one becomes an order, and the cheapest way to satisfy "restructure" is to add
+    /// code — which grows a ratio's denominator and reaches green with every comment still in
+    /// place. Rendered after the instruction, because the comment is what gets repaired first.
+    pub note: Option<String>,
     /// Covered by an ignore directive naming this rule. Recorded rather than discarded, which is
     /// what lets `deadIgnore` tell "ran and did not fire" from "was suppressed".
     pub suppressed: bool,
@@ -100,6 +107,9 @@ impl Report {
                 f.rule,
                 f.instruction
             );
+            if let Some(note) = &f.note {
+                let _ = writeln!(out, "  note: {note}");
+            }
         }
         for w in &self.withheld {
             let _ = writeln!(
@@ -135,6 +145,9 @@ impl Report {
                 fix_str(f.fix),
             );
             let _ = writeln!(out, "\tinstruction\t{}", f.instruction);
+            if let Some(note) = &f.note {
+                let _ = writeln!(out, "\tnote\t{note}");
+            }
         }
         for w in &self.withheld {
             let _ = writeln!(

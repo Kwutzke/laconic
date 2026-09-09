@@ -848,3 +848,40 @@ fn a_spec_inside_a_function_body_is_not_documentable() {
         .expect("the comment is extracted");
     assert_eq!(block.kind, CommentKind::Doc);
 }
+/// The restructuring hint is a note, not part of the instruction, and it is attached only well past
+/// the threshold.
+///
+/// Both halves matter. Folded into the instruction it becomes an order, and the cheapest way for an
+/// agent to satisfy "restructure" is to add code, which grows the denominator and reaches green with
+/// every comment still in place — the reason it was once left out of the diagnostics altogether. On
+/// every finding it is a sentence nobody reads.
+#[test]
+fn the_restructuring_note_is_separate_and_only_well_past_the_threshold() {
+    // Four comment lines against four of code: 1.0, five times the ratio.
+    let heavy = "package x\n\nfunc heavy() int {\n\t// The two halves below are ordered by call frequency rather than by name,\n\t// which is a convention this package keeps and no other package in the tree\n\t// does. A reader coming from elsewhere will look for alphabetical order and\n\t// will not find it here.\n\tx := 1\n\treturn x\n}\n";
+    let f = findings_for(heavy)
+        .into_iter()
+        .find(|f| f.rule == "density")
+        .expect("density fires on 1.0");
+    let note = f.note.expect("well past the threshold carries the note");
+    assert!(
+        note.starts_with("comments say why, not what"),
+        "got {note:?}"
+    );
+    assert!(
+        !f.instruction.contains("naming or structure"),
+        "the hint must not reach the instruction: {:?}",
+        f.instruction
+    );
+
+    // One comment line against four of code: 0.25, over the ratio and under twice it.
+    let mild = "package x\n\nfunc mild() int {\n\t// the gateway rejects a batch larger than this\n\tlimit := 32\n\treturn limit\n}\n";
+    let f = findings_for(mild)
+        .into_iter()
+        .find(|f| f.rule == "density")
+        .expect("density fires on 0.25");
+    assert_eq!(
+        f.note, None,
+        "a subject barely over the ratio is evidence of nothing"
+    );
+}

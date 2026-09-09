@@ -354,6 +354,7 @@ fn only_unsuppressed_delete_findings_from_autofix_rules_are_applicable() {
         tier: Tier::Gate,
         fix,
         instruction: String::new(),
+        note: None,
         suppressed,
     };
 

@@ -62,6 +62,26 @@ pub const DOC_LINES_PER_MEMBER: usize = 3;
 /// in a function complex enough to need one.
 pub const DENSITY_MAX_RATIO: f64 = 0.2;
 
+/// The hint a proportional rule adds once a subject is well past its threshold.
+///
+/// Ordered after the instruction for a reason: the comment is what gets repaired, and only what
+/// survives that repair is evidence about the code. It is a note rather than part of the
+/// instruction because the consumer executes instructions — told to restructure, an agent reaches
+/// green fastest by adding code, which grows the denominator and leaves every comment in place.
+const RESTRUCTURE_NOTE: &str = "comments say why, not what — one that still seems necessary here is \
+often naming or structure asking to be fixed. Repair the comment first; report the restructuring \
+rather than doing it to satisfy this finding.";
+
+/// How far past its threshold a subject must be before [`RESTRUCTURE_NOTE`] is attached.
+///
+/// A subject a line over is evidence of nothing, and a hint on every finding is a hint nobody
+/// reads. Doubling is the coarsest band separating "slightly over" from "the commentary is the
+/// thing being read", and it is a starting value with no measurement behind it.
+const NOTE_MULTIPLE: f64 = 2.0;
+
+/// [`NOTE_MULTIPLE`] for the rule whose budgets are line counts rather than a ratio.
+const NOTE_MULTIPLE_INT: usize = 2;
+
 pub struct Restate;
 
 impl BlockRule for Restate {
@@ -260,9 +280,11 @@ impl BlockRule for DocBloat {
         // included, because they are different failures. Neither sentence says "move the rest into
         // the body" any more: that instruction taught a repairing agent to relocate prose into the
         // function it documented, where `density` then reported it — one rule instructing what
-        // another punishes. Neither invites restructuring the subject either: the denominator is
-        // the agent's to change, and inflating it reaches green with the comment untouched.
-        Some(RuleHit::new(
+        // another punishes. Restructuring reaches the reader through [`RESTRUCTURE_NOTE`] instead,
+        // which is a note rather than an instruction for exactly the reason it was once left out
+        // altogether: the denominator is the agent's to change, and inflating it reaches green with
+        // the comment untouched.
+        let hit = RuleHit::new(
             ctx.block.span.clone(),
             if over_relative {
                 format!(
@@ -274,7 +296,17 @@ impl BlockRule for DocBloat {
                     "shorten this doc comment: {lines} lines — keep only what a reader cannot derive; the rest belongs in a document if it belongs anywhere"
                 )
             },
-        ))
+        );
+        let budget = if over_relative {
+            members.saturating_mul(ctx.thresholds.doc_lines_per_member)
+        } else {
+            ctx.thresholds.absolute_doc_lines
+        };
+        Some(if lines > budget.saturating_mul(NOTE_MULTIPLE_INT) {
+            hit.with_note(RESTRUCTURE_NOTE)
+        } else {
+            hit
+        })
     }
 }
 
@@ -377,14 +409,21 @@ impl SubjectRule for Density {
         if ratio <= ctx.thresholds.density_max_ratio {
             return None;
         }
-        Some(RuleHit::new(
+        let hit = RuleHit::new(
             ctx.subject.span.clone(),
             format!(
                 "reduce the commentary here: {} against {} — keep the ones a reader could not derive and delete the rest",
                 comment_lines_phrase(comment_lines),
                 code_lines_phrase(code_lines)
             ),
-        ))
+        );
+        Some(
+            if ratio > ctx.thresholds.density_max_ratio * NOTE_MULTIPLE {
+                hit.with_note(RESTRUCTURE_NOTE)
+            } else {
+                hit
+            },
+        )
     }
 }
 
