@@ -634,7 +634,7 @@ fn subject_visibility_mechanisms() {
     }
 }
 
-/// Concern 9 — a subject's statement count, for `density`'s ratio. The container is not always the
+/// Concern 9 — a subject's statement count, for `docbloat`'s ratio. The container is not always the
 /// body node: Go interposes a `statement_list` between `block` and its statements.
 #[test]
 fn statement_containers_and_counts() {
@@ -667,8 +667,8 @@ fn statement_case(g: Grammar) -> Option<(&'static str, &'static str, &'static st
 }
 
 /// Named children of a body that are not statements. A Rust statement-level attribute is a named
-/// child of `block`, so counting it inflates `density`'s denominator by one per attribute and makes
-/// the rule systematically harder to trip in attribute-heavy code.
+/// child of `block`, so counting it inflates `member_count` by one per attribute and makes
+/// `docbloat` systematically harder to trip in attribute-heavy code.
 ///
 /// The Rust fixture carries **both** forms inside `exported` for this reason. With an outer
 /// attribute alone, `inner_attribute_item` appeared in no fixture, so deleting it from either list

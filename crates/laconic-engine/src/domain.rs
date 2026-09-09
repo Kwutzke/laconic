@@ -81,9 +81,9 @@ pub struct Subject {
     ///
     /// Not `member_count`, which a pack derives from the parse tree and which collapses wherever a
     /// language nests code inside an expression: a Go function whose body is one
-    /// `f(func(){ …50 lines… })` declares two statements, and one that is a single composite
-    /// literal declares one, so the ratio measured a 935-line subject as though it were a
-    /// one-liner. Counted in the engine so a pack cannot get it wrong.
+    /// `f(func(){ …50 lines… })` declares a single statement however long the closure is, so the
+    /// ratio measured a 935-line subject as though it were a one-liner. Counted in the engine so a
+    /// pack cannot get it wrong.
     pub code_lines: usize,
     pub visibility: Visibility,
 }

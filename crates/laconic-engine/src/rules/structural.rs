@@ -35,8 +35,8 @@ const MIN_SYMBOL_LEN: usize = 3;
 /// rather than referenced, because the reader who needs the escape has no tracker access.
 pub const ABSOLUTE_DOC_LINES: usize = 6;
 
-/// `docbloat`'s ratio, and `density`'s below it. Both carried over unchanged when the denominator
-/// stopped being rows of text; the corpus run is what calibrates them.
+/// `docbloat`'s ratio. Carried over unchanged when the denominator stopped being rows of text; the
+/// corpus run is what calibrates it.
 ///
 /// Coupled to [`ABSOLUTE_DOC_LINES`]: two members already reach the cap, so this decides firing at
 /// one member and nowhere else. Raising it to loosen the ratio disables the only band it has.
@@ -289,6 +289,15 @@ fn code_lines_phrase(lines: usize) -> String {
     }
 }
 
+/// Same reason as [`members_phrase`]. Reachable only since the floor was retired: below it, one
+/// comment line never fired.
+fn comment_lines_phrase(lines: usize) -> String {
+    match lines {
+        1 => "1 comment line".to_string(),
+        n => format!("{n} comment lines"),
+    }
+}
+
 pub struct ImplInInterface;
 
 impl BlockRule for ImplInInterface {
@@ -337,9 +346,8 @@ impl SubjectRule for Density {
         "density"
     }
 
-    /// Above [`DENSITY_MAX_RATIO`], and nothing else — a floor would only re-admit the short
-    /// subject the ratio is there to catch, since a small function needing running commentary is
-    /// the case, not the exception.
+    /// Above [`DENSITY_MAX_RATIO`], and nothing else. A floor exempts by absolute count, which is
+    /// exactly the short heavily-commented subject the ratio exists to catch.
     fn check(&self, ctx: &SubjectContext) -> Option<RuleHit> {
         // Doc kind is excluded, and the reason is not positional: `docbloat` is the rule that
         // measures a doc comment against its subject, so counting one here would measure the same
@@ -365,7 +373,8 @@ impl SubjectRule for Density {
         Some(RuleHit::new(
             ctx.subject.span.clone(),
             format!(
-                "reduce the commentary here: {comment_lines} comment lines against {} — keep the ones a reader could not derive and delete the rest",
+                "reduce the commentary here: {} against {} — keep the ones a reader could not derive and delete the rest",
+                comment_lines_phrase(comment_lines),
                 code_lines_phrase(code_lines)
             ),
         ))

@@ -587,7 +587,7 @@ fn density_reaches_an_interface() {
     assert_eq!(members_of(src, "type Store"), 2);
     assert!(
         rules_fired(src).contains(&"density"),
-        "nine comment lines against two methods; got {:?}",
+        "nine comment lines against four lines of code; got {:?}",
         rules_fired(src)
     );
 }

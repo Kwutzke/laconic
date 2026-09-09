@@ -87,7 +87,7 @@ pub trait Pack {
     /// for a function body, methods and embedded types for an interface, fields for a struct,
     /// variants for an enum, specs for a Go `const` or `var` block.
     ///
-    /// Both proportional rules measure against this. It replaced a row count, which was a proxy for
+    /// `docbloat` measures against this. It replaced a row count, which was a proxy for
     /// the fact the tree already holds and came apart from it in both directions — syntax rows
     /// inflating a one-method interface to three, and a tuple variant's body spanning one row.
     ///

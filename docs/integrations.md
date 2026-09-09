@@ -77,7 +77,7 @@ The checked-in file is `laconic defaults` — the shipped defaults rendered from
 the two exclusions the engine cannot ship as universal:
 
 - `probe/`, grammar fixtures where a detached comment exists in order to be a detached comment.
-  Every finding in there is correct and none is actionable. It is 26 of the 69 findings a default
+  Every finding in there is correct and none is actionable. It is 34 of the 86 findings a default
   run reports on `crates/`.
 - `target/`, so that `laconic check .` at the repository root means what it looks like it means.
 

@@ -80,7 +80,8 @@ are never autofixable at any setting — for `ignoreReason` the only deletion th
 deleting the directive, which silently re-enables the rule it suppressed.
 
 Thresholds are configurable: `absolute_doc_lines = 6`, `doc_lines_per_member = 3`,
-`density_max_ratio = 0.2`. The first two are the specification's estimates; `density_max_ratio` is
+`density_max_ratio = 0.2`. `absolute_doc_lines` is the owner's ruling against the corpus and
+`doc_lines_per_member` is the specification's estimate; `density_max_ratio` is
 comment lines per line of code, calibrated against a Go corpus and then set one step stricter, on
 the view that an `laconic:ignore density — <reason>` on the subject that earns its commentary beats
 a threshold permissive enough never to ask.

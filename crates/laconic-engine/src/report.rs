@@ -59,6 +59,15 @@ impl Report {
     pub fn finalise(&mut self) {
         self.findings
             .sort_by(|a, b| (&a.file, a.span.start, a.rule).cmp(&(&b.file, b.span.start, b.rule)));
+        // Two findings a consumer cannot tell apart are one finding. A per-subject rule reports
+        // once per enclosing subject, so a Python module whose only statement is a class measures
+        // the same comment run twice — and the spans differ by the closing byte, which is why
+        // sorting alone leaves both. Only exact renders collapse: distinct spans that render
+        // differently are distinct problems and stay.
+        self.findings.dedup_by(|a, b| {
+            (&a.file, a.rule, a.line, a.column, &a.instruction)
+                == (&b.file, b.rule, b.line, b.column, &b.instruction)
+        });
         self.withheld.sort_by(|a, b| a.file.cmp(&b.file));
         self.unreadable.sort_by(|a, b| a.file.cmp(&b.file));
     }

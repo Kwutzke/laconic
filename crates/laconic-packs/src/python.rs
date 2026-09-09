@@ -115,7 +115,7 @@ impl Pack for PythonPack {
     /// Concern 9, with the correction the probe found: a docstring is an `expression_statement`
     /// rather than an `extra`, so filtering comments does not remove it here as it does everywhere
     /// else. Left in, the same function shape counts one higher in Python than in any other
-    /// language and `density` is systematically harder to trip.
+    /// language and `docbloat` is systematically harder to trip.
     fn member_count(&self, subject: Node, _src: &str) -> usize {
         let body = match subject.child_by_field_name("body") {
             Some(body) => body,

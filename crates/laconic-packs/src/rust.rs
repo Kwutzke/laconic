@@ -52,7 +52,7 @@ pub(crate) const ITEMS: &[&str] = &[
 ];
 
 /// Named children of a block that are not statements. A statement-level attribute inflates
-/// `density`'s denominator by one per attribute.
+/// `member_count` by one per attribute, which is `docbloat`'s denominator.
 pub(crate) const NON_STATEMENTS: &[&str] = &["attribute_item", "inner_attribute_item"];
 
 pub struct RustPack;
