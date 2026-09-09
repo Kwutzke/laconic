@@ -5,7 +5,7 @@
 //! of its own.
 
 use crate::registry::{Registry, Tier};
-use crate::rules::structural::{ABSOLUTE_DOC_LINES, DENSITY_MAX_RATIO, DOC_LINES_PER_MEMBER};
+use crate::rules::structural::{ABSOLUTE_DOC_LINES, DENSITY_ALLOWANCE, DOC_LINES_PER_MEMBER};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 pub struct Thresholds {
     pub absolute_doc_lines: usize,
     pub doc_lines_per_member: usize,
-    pub density_max_ratio: f64,
+    pub density_allowance: f64,
 }
 
 impl Default for Thresholds {
@@ -27,7 +27,7 @@ impl Default for Thresholds {
         Self {
             absolute_doc_lines: ABSOLUTE_DOC_LINES,
             doc_lines_per_member: DOC_LINES_PER_MEMBER,
-            density_max_ratio: DENSITY_MAX_RATIO,
+            density_allowance: DENSITY_ALLOWANCE,
         }
     }
 }
@@ -91,7 +91,7 @@ impl From<TierName> for Tier {
 pub struct ThresholdConfig {
     pub absolute_doc_lines: Option<usize>,
     pub doc_lines_per_member: Option<usize>,
-    pub density_max_ratio: Option<f64>,
+    pub density_allowance: Option<f64>,
 }
 
 impl ThresholdConfig {
@@ -101,7 +101,7 @@ impl ThresholdConfig {
             doc_lines_per_member: self
                 .doc_lines_per_member
                 .unwrap_or(base.doc_lines_per_member),
-            density_max_ratio: self.density_max_ratio.unwrap_or(base.density_max_ratio),
+            density_allowance: self.density_allowance.unwrap_or(base.density_allowance),
         }
     }
 }
@@ -302,7 +302,7 @@ pub fn defaults_toml() -> String {
     let _ = writeln!(out, "[thresholds]");
     let _ = writeln!(out, "absolute_doc_lines = {}", t.absolute_doc_lines);
     let _ = writeln!(out, "doc_lines_per_member = {}", t.doc_lines_per_member);
-    let _ = writeln!(out, "density_max_ratio = {}", t.density_max_ratio);
+    let _ = writeln!(out, "density_allowance = {}", t.density_allowance);
 
     for entry in default_rules() {
         let _ = writeln!(

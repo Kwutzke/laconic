@@ -42,25 +42,29 @@ pub const ABSOLUTE_DOC_LINES: usize = 6;
 /// one member and nowhere else. Raising it to loosen the ratio disables the only band it has.
 pub const DOC_LINES_PER_MEMBER: usize = 3;
 
-/// Comment lines per line of code, above which `density` fires. One comment line per five is the
-/// most a subject holds before the commentary is the thing being read.
+/// Allowed comment lines are this many times the **square root** of a subject's code lines.
 ///
-/// Both numerator and denominator are lines, so the value is a ratio a reader can hold. It replaced
-/// a lines-per-member figure that could not be reasoned about, and with it the floor that figure
-/// needed: measured over `business-platform-backend/internal`, dividing by members with no floor
-/// reported 2670 findings against 411 dividing by code lines. The floor was compensating for the
-/// denominator, so fixing the denominator retired it.
+/// A constant ratio grants a long subject a proportional budget, and nothing needs one: at 0.2 a
+/// 250-line function was allowed 50 comment lines, which is how a concentrated six-line block hid
+/// inside thirty-four lines of switch and logger setup and the rule reported nothing. The square
+/// root grants that function 16 and a four-line one 2 — looser than the old ratio below 25 code
+/// lines, stricter above, crossing over exactly there.
 ///
-/// 0.25 is where that corpus calibrated, and 0.2 is one step stricter than it: the owner's ruling,
-/// on the view that an `laconic:ignore density — <reason>` on the subject that earns its commentary
-/// beats a threshold permissive enough never to ask.
+/// The two directions are the two failures the ratio produced, in one curve. Its false positives
+/// were single `why` comments in short subjects, which are now inside the budget; its false
+/// negatives were dense blocks diluted by length, which are now outside it.
 ///
-/// **The hand-judged samples behind those two numbers are not comparable.** 13/15 at 0.25 was
-/// measured while `density` still counted a declaration member's documentation, so the population
-/// held easy true positives — restated field names, section banners. On what the rule reports now,
-/// which is 90% function bodies, a fresh sample of fifteen ran about half, and every miss was a why
-/// in a function complex enough to need one.
-pub const DENSITY_MAX_RATIO: f64 = 0.2;
+/// At 1.0 there is no free parameter: the rule is `comment_lines² > code_lines`. Measured over
+/// `business-platform-backend/internal`, 370 of 2979 commented subjects fire against 305 under the
+/// old ratio — 218 shared, 152 new, 90 dropped, so a different selection rather than a larger one.
+///
+/// **The curve buys recall, not precision.** A hand-judged fifteen ran 8/15 against 7/14 for the
+/// ratio it replaced, and the misses changed shape rather than thinning: the ratio's were single
+/// `why` comments in short subjects, and these are long functions carrying dense measured
+/// rationale — WAL semantics, search scoring, cross-system field names — which is the population a
+/// curve stricter on length was always going to surface. 1.0 itself is fitted to two cases: 1.2
+/// misses both, so the value is sensitive and remains uncalibrated.
+pub const DENSITY_ALLOWANCE: f64 = 1.0;
 
 /// The hint a proportional rule adds once a subject is well past its threshold.
 ///
@@ -385,8 +389,9 @@ impl SubjectRule for Density {
         "density"
     }
 
-    /// Above [`DENSITY_MAX_RATIO`], and nothing else. A floor exempts by absolute count, which is
-    /// exactly the short heavily-commented subject the ratio exists to catch.
+    /// Past [`DENSITY_ALLOWANCE`] times the square root of the subject's code lines, and nothing
+    /// else. A floor exempts by absolute count, which is exactly the short heavily-commented
+    /// subject the budget exists to catch.
     fn check(&self, ctx: &SubjectContext) -> Option<RuleHit> {
         // Commentary that documents no declaration. A block resolving to a subject is that
         // subject's documentation and belongs to `docbloat`, which measures it against what it
@@ -406,8 +411,17 @@ impl SubjectRule for Density {
         if code_lines == 0 {
             return None;
         }
-        let ratio = comment_lines as f64 / code_lines as f64;
-        if ratio <= ctx.thresholds.density_max_ratio {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "line counts are far inside f64's exact integer range"
+        )]
+        let allowed = ctx.thresholds.density_allowance * (code_lines as f64).sqrt();
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "line counts are far inside f64's exact integer range"
+        )]
+        let lines = comment_lines as f64;
+        if lines <= allowed {
             return None;
         }
         let hit = RuleHit::new(
@@ -418,13 +432,11 @@ impl SubjectRule for Density {
                 code_lines_phrase(code_lines)
             ),
         );
-        Some(
-            if ratio > ctx.thresholds.density_max_ratio * NOTE_MULTIPLE {
-                hit.with_note(RESTRUCTURE_NOTE)
-            } else {
-                hit
-            },
-        )
+        Some(if lines > allowed * NOTE_MULTIPLE {
+            hit.with_note(RESTRUCTURE_NOTE)
+        } else {
+            hit
+        })
     }
 }
 
@@ -458,6 +470,9 @@ mod tests {
     fn the_shipped_thresholds_are_the_calibrated_defaults() {
         assert_eq!(ABSOLUTE_DOC_LINES, 6, "owner's ruling against the corpus");
         assert_eq!(DOC_LINES_PER_MEMBER, 3, "carried over, uncalibrated");
-        assert_eq!(DENSITY_MAX_RATIO, 0.2, "calibrated at 0.25, set stricter");
+        assert_eq!(
+            DENSITY_ALLOWANCE, 1.0,
+            "fitted to two cases, not calibrated"
+        );
     }
 }

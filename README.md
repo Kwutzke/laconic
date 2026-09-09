@@ -86,11 +86,16 @@ are never autofixable at any setting — for `ignoreReason` the only deletion th
 deleting the directive, which silently re-enables the rule it suppressed.
 
 Thresholds are configurable: `absolute_doc_lines = 6`, `doc_lines_per_member = 3`,
-`density_max_ratio = 0.2`. `absolute_doc_lines` is the owner's ruling against the corpus and
-`doc_lines_per_member` is the specification's estimate; `density_max_ratio` is
-comment lines per line of code, calibrated against a Go corpus and then set one step stricter, on
-the view that an `laconic:ignore density — <reason>` on the subject that earns its commentary beats
-a threshold permissive enough never to ask.
+`density_allowance = 1.0`. `absolute_doc_lines` is the owner's ruling against the corpus and
+`doc_lines_per_member` is the specification's estimate.
+
+**`density_allowance` is not a ratio.** A subject may carry that many comment lines times the
+**square root** of its code lines — at 1.0, `comment_lines² > code_lines` fires. A constant ratio
+grants a long subject a proportional budget and nothing needs one: at one comment line per five, a
+250-line function was allowed 50, which is how a dense six-line block hid inside thirty-four lines of
+switch and logger setup. The square root grants that function 16 and a four-line one 2, so it is
+looser than a flat ratio on short subjects, where a single *why* is usually right, and stricter on
+long ones, where dilution hides things.
 
 ## Languages
 

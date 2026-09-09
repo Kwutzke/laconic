@@ -30,7 +30,7 @@ fn stating_the_defaults_changes_nothing() {
         [thresholds]
         absolute_doc_lines = 6
         doc_lines_per_member = 3
-        density_max_ratio = 0.2
+        density_allowance = 1.0
         "#,
     );
     let from_empty = empty.resolve("go").thresholds;

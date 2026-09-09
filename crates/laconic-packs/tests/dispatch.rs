@@ -427,7 +427,7 @@ fn the_column_counts_characters_not_bytes() {
 /// collapse and a reader cannot tell apart.
 #[test]
 fn one_comment_run_is_reported_once_across_nested_subjects() {
-    let src = "class C:\n    # the two ids arrive swapped from the upstream feed\n    # and are re-paired here rather than at the call site\n    def m(self):\n        x = 1\n        return x\n";
+    let src = "class C:\n    # the two ids arrive swapped from the upstream feed\n    # and are re-paired here rather than at the call site\n    # because the caller cannot tell them apart\n    def m(self):\n        x = 1\n        return x\n";
     let packs = all();
     let path = Path::new("b.py");
     let (pack, grammar) = resolve(&packs, path).expect("python pack claims .py");

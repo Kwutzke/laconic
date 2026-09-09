@@ -2,7 +2,7 @@
 
 use laconic_engine::domain::{Attachment, CommentKind, Visibility};
 use laconic_engine::{
-    ABSOLUTE_DOC_LINES, Config, DENSITY_MAX_RATIO, DOC_LINES_PER_MEMBER, FileAnalysis, Finding,
+    ABSOLUTE_DOC_LINES, Config, DENSITY_ALLOWANCE, DOC_LINES_PER_MEMBER, FileAnalysis, Finding,
     Resolved, Rules, Skipped, all_block_rules, all_subject_rules, analyse, dispatch, resolve,
 };
 use laconic_packs::all;
@@ -679,14 +679,14 @@ fn each_threshold_fires_one_line_past_itself() {
         clippy::cast_sign_loss,
         reason = "a line count small enough to be exact in f64, truncated back to the largest silent count"
     )]
-    let silent = (DENSITY_CODE_LINES as f64 * DENSITY_MAX_RATIO) as usize;
+    let silent = (DENSITY_ALLOWANCE * (DENSITY_CODE_LINES as f64).sqrt()) as usize;
     assert!(
         !rules_fired(&commented_iface(silent)).contains(&"density"),
-        "at the ratio exactly, the rule is silent"
+        "at the allowance exactly, the rule is silent"
     );
     assert!(
         rules_fired(&commented_iface(silent + 1)).contains(&"density"),
-        "one line past the ratio must fire"
+        "one line past the allowance must fire"
     );
 }
 
@@ -857,12 +857,13 @@ fn a_spec_inside_a_function_body_is_not_documentable() {
 /// every finding it is a sentence nobody reads.
 #[test]
 fn the_restructuring_note_is_separate_and_only_well_past_the_threshold() {
-    // Four comment lines against four of code: 1.0, five times the ratio.
-    let heavy = "package x\n\nfunc heavy() int {\n\t// The two halves below are ordered by call frequency rather than by name,\n\t// which is a convention this package keeps and no other package in the tree\n\t// does. A reader coming from elsewhere will look for alphabetical order and\n\t// will not find it here.\n\tx := 1\n\treturn x\n}\n";
+    // Six comment lines against four of code. The allowance is sqrt(4) = 2, so this is three
+    // times it — past the doubling the note is gated on.
+    let heavy = "package x\n\nfunc heavy() int {\n\t// The two halves below are ordered by call frequency rather than by name,\n\t// which is a convention this package keeps and no other package in the tree\n\t// does. A reader coming from elsewhere will look for alphabetical order and\n\t// will not find it here. The ordering is load-bearing for the generated mock,\n\t// which emits in source order and is diffed in review, so a rename that\n\t// reorders these is a diff nobody can read.\n\tx := 1\n\treturn x\n}\n";
     let f = findings_for(heavy)
         .into_iter()
         .find(|f| f.rule == "density")
-        .expect("density fires on 1.0");
+        .expect("density fires at three times the allowance");
     let note = f.note.expect("well past the threshold carries the note");
     assert!(
         note.starts_with("most code needs no comment"),
@@ -874,14 +875,14 @@ fn the_restructuring_note_is_separate_and_only_well_past_the_threshold() {
         f.instruction
     );
 
-    // One comment line against four of code: 0.25, over the ratio and under twice it.
-    let mild = "package x\n\nfunc mild() int {\n\t// the gateway rejects a batch larger than this\n\tlimit := 32\n\treturn limit\n}\n";
+    // Three comment lines against four of code: past the allowance of 2, inside twice it.
+    let mild = "package x\n\nfunc mild() int {\n\t// the gateway rejects a batch larger than this,\n\t// and answers 413 rather than truncating,\n\t// which the caller reads as retryable\n\tlimit := 32\n\treturn limit\n}\n";
     let f = findings_for(mild)
         .into_iter()
         .find(|f| f.rule == "density")
-        .expect("density fires on 0.25");
+        .expect("density fires past the allowance");
     assert_eq!(
         f.note, None,
-        "a subject barely over the ratio is evidence of nothing"
+        "a subject barely over the allowance is evidence of nothing"
     );
 }

@@ -35,7 +35,7 @@ excluded_paths = ["testdata", "fixtures", "vendor", "node_modules", "probe", "ta
 [thresholds]
 absolute_doc_lines = 6
 doc_lines_per_member = 3
-density_max_ratio = 0.2
+density_allowance = 1
 
 # line: gate/delete   block: gate/delete   doc: warn/rewrite
 [rules.narration]

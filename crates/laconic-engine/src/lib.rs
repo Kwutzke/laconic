@@ -32,7 +32,7 @@ pub use report::{
     EXIT_CLEAN, EXIT_GATE, EXIT_USAGE, Finding, Report, UnreadableFile, WithheldNote,
 };
 pub use rule::{BlockContext, BlockRule, RuleHit, SubjectContext, SubjectRule};
-pub use rules::structural::{ABSOLUTE_DOC_LINES, DENSITY_MAX_RATIO, DOC_LINES_PER_MEMBER};
+pub use rules::structural::{ABSOLUTE_DOC_LINES, DENSITY_ALLOWANCE, DOC_LINES_PER_MEMBER};
 pub use rules::{
     all_block_rules, all_subject_rules, structural_block_rules, structural_subject_rules,
     text_rules,
