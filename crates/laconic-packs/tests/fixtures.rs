@@ -34,7 +34,7 @@ fn actual(path: &Path) -> Vec<String> {
         block: all_block_rules(),
         subject: all_subject_rules(),
     };
-    let (findings, note) = dispatch(path, &src, &analysis, &Resolved::default(), &rules);
+    let (findings, note) = dispatch(path, &src, &analysis, &resolved_for(path), &rules);
     let mut report = Report {
         findings,
         withheld: note.into_iter().collect(),
@@ -45,6 +45,25 @@ fn actual(path: &Path) -> Vec<String> {
         .active()
         .map(|f| format!("{}:{}", f.line, f.rule))
         .collect()
+}
+
+/// Every rule, with `density` off outside its own directory.
+///
+/// `density` measures a ratio over a whole subject where every other rule measures one comment's
+/// text, so a fixture minimal enough to isolate another rule is density-positive by construction —
+/// two comment lines in a six-line function clears the threshold. Left on, 28 fixtures would have
+/// to name a rule they are not fixtures for, and every one of them would churn on a recalibration.
+fn resolved_for(path: &Path) -> Resolved {
+    let mut resolved = Resolved::default();
+    let own = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .is_some_and(|d| d == "density");
+    resolved
+        .registry
+        .set_enabled("density", own)
+        .expect("density is a registered rule");
+    resolved
 }
 
 fn instructions(path: &Path) -> Vec<String> {

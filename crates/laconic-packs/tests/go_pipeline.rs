@@ -2,9 +2,8 @@
 
 use laconic_engine::domain::{Attachment, CommentKind, Visibility};
 use laconic_engine::{
-    ABSOLUTE_DOC_LINES, Config, DENSITY_MIN_COMMENT_LINES, DOC_LINES_PER_MEMBER, FileAnalysis,
-    Finding, Resolved, Rules, Skipped, all_block_rules, all_subject_rules, analyse, dispatch,
-    resolve,
+    ABSOLUTE_DOC_LINES, Config, DENSITY_MAX_RATIO, DOC_LINES_PER_MEMBER, FileAnalysis, Finding,
+    Resolved, Rules, Skipped, all_block_rules, all_subject_rules, analyse, dispatch, resolve,
 };
 use laconic_packs::all;
 use std::path::Path;
@@ -658,20 +657,36 @@ fn each_threshold_fires_one_line_past_itself() {
         "the ratio reaches below the cap at one member, or it decides nothing anywhere"
     );
 
-    // `density` counts non-doc commentary, so the run sits inside the interface body.
+    // `density` counts non-doc commentary, so the run sits inside the interface body. Eight
+    // methods plus the two brace lines are the denominator: ten, chosen so the ratio lands on a
+    // whole number of comment lines and the boundary is exact rather than rounded.
+    const DENSITY_CODE_LINES: usize = 10;
     let commented_iface = |lines: usize| {
         let prose = (0..lines)
             .map(|i| format!("\t// Line {i} of running commentary.\n"))
             .collect::<String>();
-        format!("package x\n\ntype S interface {{\n{prose}\n\tGet() error\n\tPut() error\n}}\n")
+        let methods = (0..DENSITY_CODE_LINES - 2)
+            .map(|i| format!("\tM{i}() error\n"))
+            .collect::<String>();
+        // The blank line keeps the run detached: sitting directly above a method it would be that
+        // method's doc comment, and `density` excludes Doc kind. Blank lines are not code, so the
+        // denominator is unchanged.
+        format!("package x\n\ntype S interface {{\n{prose}\n{methods}}}\n")
     };
+    #[expect(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a line count small enough to be exact in f64, truncated back to the largest silent count"
+    )]
+    let silent = (DENSITY_CODE_LINES as f64 * DENSITY_MAX_RATIO) as usize;
     assert!(
-        !rules_fired(&commented_iface(DENSITY_MIN_COMMENT_LINES)).contains(&"density"),
-        "the floor is the largest count that stays silent"
+        !rules_fired(&commented_iface(silent)).contains(&"density"),
+        "at the ratio exactly, the rule is silent"
     );
     assert!(
-        rules_fired(&commented_iface(DENSITY_MIN_COMMENT_LINES + 1)).contains(&"density"),
-        "one line past the floor must fire"
+        rules_fired(&commented_iface(silent + 1)).contains(&"density"),
+        "one line past the ratio must fire"
     );
 }
 

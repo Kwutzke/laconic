@@ -42,13 +42,19 @@ pub const ABSOLUTE_DOC_LINES: usize = 6;
 /// one member and nowhere else. Raising it to loosen the ratio disables the only band it has.
 pub const DOC_LINES_PER_MEMBER: usize = 3;
 
-/// `density` measures non-doc commentary, so it needs both a floor and a ratio: a long run is
-/// unremarkable in a long function and damning in a short one.
+/// Comment lines per line of code, above which `density` fires. One comment line per five is the
+/// most a subject holds before the commentary is the thing being read.
 ///
-/// The floor is the largest count that stays *silent*; the rule first fires one line above it. Its
-/// sibling below is the opposite polarity, firing *above* its value.
-pub const DENSITY_MIN_COMMENT_LINES: usize = 8;
-pub const DENSITY_MAX_RATIO: f64 = 0.5;
+/// Both numerator and denominator are lines, so the value is a ratio a reader can hold. It replaced
+/// a lines-per-member figure that could not be reasoned about, and with it the floor that figure
+/// needed: measured over `business-platform-backend/internal`, dividing by members with no floor
+/// reported 2670 findings against 411 dividing by code lines. The floor was compensating for the
+/// denominator, so fixing the denominator retired it.
+///
+/// Calibrated on that corpus at 0.25, where a hand-judged sample of fifteen ran 13/15. This is
+/// deliberately stricter: an `laconic:ignore density — <reason>` on the subject that earns its
+/// commentary beats a threshold permissive enough to never ask.
+pub const DENSITY_MAX_RATIO: f64 = 0.2;
 
 pub struct Restate;
 
@@ -275,6 +281,14 @@ fn members_phrase(members: usize) -> String {
     }
 }
 
+/// Same reason as [`members_phrase`].
+fn code_lines_phrase(lines: usize) -> String {
+    match lines {
+        1 => "1 line of code".to_string(),
+        n => format!("{n} lines of code"),
+    }
+}
+
 pub struct ImplInInterface;
 
 impl BlockRule for ImplInInterface {
@@ -323,10 +337,9 @@ impl SubjectRule for Density {
         "density"
     }
 
-    /// Past [`DENSITY_MIN_COMMENT_LINES`] **and** above [`DENSITY_MAX_RATIO`]. Both are the
-    /// specification's stated values with no measurement behind them. The ratio is the weaker of the
-    /// two by a wide margin: with the floor where it is, suppressing a finding by ratio alone needs
-    /// a subject declaring at least eighteen members, so on ordinary code the floor decides.
+    /// Above [`DENSITY_MAX_RATIO`], and nothing else — a floor would only re-admit the short
+    /// subject the ratio is there to catch, since a small function needing running commentary is
+    /// the case, not the exception.
     fn check(&self, ctx: &SubjectContext) -> Option<RuleHit> {
         // Doc kind is excluded, and the reason is not positional: `docbloat` is the rule that
         // measures a doc comment against its subject, so counting one here would measure the same
@@ -339,16 +352,13 @@ impl SubjectRule for Density {
             .filter(|b| b.kind != CommentKind::Doc)
             .map(|b| b.line_count())
             .sum();
-        if comment_lines <= ctx.thresholds.density_min_comment_lines {
-            return None;
-        }
-        // A subject declaring no members has no denominator, and this rule is the ratio: unlike
+        // A subject holding no code has no denominator, and this rule is the ratio: unlike
         // `docbloat` it carries no absolute test to fall back on.
-        let members = ctx.subject.member_count;
-        if members == 0 {
+        let code_lines = ctx.subject.code_lines;
+        if code_lines == 0 {
             return None;
         }
-        let ratio = comment_lines as f64 / members as f64;
+        let ratio = comment_lines as f64 / code_lines as f64;
         if ratio <= ctx.thresholds.density_max_ratio {
             return None;
         }
@@ -356,7 +366,7 @@ impl SubjectRule for Density {
             ctx.subject.span.clone(),
             format!(
                 "reduce the commentary here: {comment_lines} comment lines against {} — keep the ones a reader could not derive and delete the rest",
-                members_phrase(members)
+                code_lines_phrase(code_lines)
             ),
         ))
     }
@@ -392,7 +402,6 @@ mod tests {
     fn the_shipped_thresholds_are_the_calibrated_defaults() {
         assert_eq!(ABSOLUTE_DOC_LINES, 6, "owner's ruling against the corpus");
         assert_eq!(DOC_LINES_PER_MEMBER, 3, "carried over, uncalibrated");
-        assert_eq!(DENSITY_MIN_COMMENT_LINES, 8, "silent at 8, fires at 9");
-        assert_eq!(DENSITY_MAX_RATIO, 0.5, "carried over, uncalibrated");
+        assert_eq!(DENSITY_MAX_RATIO, 0.2, "calibrated at 0.25, set stricter");
     }
 }

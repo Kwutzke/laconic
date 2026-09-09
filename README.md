@@ -65,7 +65,7 @@ autofixed, and most do.
 | `detached` | gate | a comment floating free of the code it describes |
 | `fileref` | gate | a path reference that goes stale on the first rename |
 | `ignoreReason` | gate | a `laconic:ignore` directive with no reason |
-| `density` | warn | too much commentary against the members it covers |
+| `density` | warn | too much commentary against the code it covers |
 | `docbloat` | warn | a doc comment longer than what a caller cannot derive |
 | `implInInterface` | warn | an unexported name in a doc comment a caller cannot use |
 | `hedging` | warn | a hedge standing in for the condition it hides |
@@ -79,9 +79,11 @@ the friction is the price of not deleting good comments unattended. `fileref` an
 are never autofixable at any setting — for `ignoreReason` the only deletion that makes it pass is
 deleting the directive, which silently re-enables the rule it suppressed.
 
-Thresholds are configurable and currently the specification's estimates rather than measurements:
-`absolute_doc_lines = 6`, `doc_lines_per_member = 3`, `density_min_comment_lines = 8`,
-`density_max_ratio = 0.5`.
+Thresholds are configurable: `absolute_doc_lines = 6`, `doc_lines_per_member = 3`,
+`density_max_ratio = 0.2`. The first two are the specification's estimates; `density_max_ratio` is
+comment lines per line of code, calibrated against a Go corpus and then set one step stricter, on
+the view that an `laconic:ignore density — <reason>` on the subject that earns its commentary beats
+a threshold permissive enough never to ask.
 
 ## Languages
 

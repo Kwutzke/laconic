@@ -2,7 +2,8 @@ package density
 
 func f() {
 	// alpha
-	// bravo
 	q := 1
-	_ = q
+	r := 2
+	s := 3
+	_ = q + r + s
 }

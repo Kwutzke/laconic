@@ -72,10 +72,19 @@ pub struct Subject {
     pub span: Range<usize>,
     /// The identifiers this subject binds, already split on camelCase and snake_case — `restate`.
     pub bound_identifiers: Vec<String>,
-    /// The members this subject declares — pack concern 9, and the denominator both `docbloat` and
-    /// `density` measure a comment against. Zero means the subject declares none, so neither ratio
-    /// applies and the absolute threshold stands alone.
+    /// The members this subject declares — pack concern 9, and the denominator `docbloat` measures
+    /// a doc comment against. Zero means the subject declares none, so the ratio does not apply and
+    /// the absolute threshold stands alone.
     pub member_count: usize,
+    /// Lines in the span carrying a byte that is neither whitespace nor inside a comment —
+    /// `density`'s denominator.
+    ///
+    /// Not `member_count`, which a pack derives from the parse tree and which collapses wherever a
+    /// language nests code inside an expression: a Go function whose body is one
+    /// `f(func(){ …50 lines… })` declares two statements, and one that is a single composite
+    /// literal declares one, so the ratio measured a 935-line subject as though it were a
+    /// one-liner. Counted in the engine so a pack cannot get it wrong.
+    pub code_lines: usize,
     pub visibility: Visibility,
 }
 
