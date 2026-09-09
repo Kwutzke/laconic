@@ -43,6 +43,14 @@ pub(crate) const DOCUMENTABLE_ANYWHERE: &[&str] = &[
     // it here the block is Line kind, which carries a Delete fix at gate tier with autofix on —
     // `laconic fix` would delete a package comment that tripped `narration` or `banner`.
     "package_clause",
+    // A spec inside a grouped `const (…)` or `var (…)` is its own godoc surface — pkg.go.dev
+    // renders the comment above each constant, not just the one above the block. The declarations
+    // below are documentable only at file scope, which left the per-constant comment Line kind:
+    // counted by `density` as running commentary, measured by `docbloat` never, and carrying a
+    // Delete fix at gate tier with autofix on. Neither spec kind occurs anywhere but inside its
+    // own declaration, so unlike `type_elem` this needs no scoping.
+    "const_spec",
+    "var_spec",
 ];
 
 /// Declarations that carry a godoc comment only at file scope. `var`, `const` and `type` are also

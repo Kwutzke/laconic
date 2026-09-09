@@ -204,9 +204,18 @@ pub fn analyse(
             }
         };
 
+        // A trailing comment documents the declaration beside it — `Field T // what it carries` is
+        // that field's godoc — so it resolves to a subject like any other documentation. Left
+        // unresolved, `density` counted every documented member of a struct as running commentary
+        // while the denominator counted the same lines as code, and the ratio could not be
+        // satisfied by any amount of correct documentation.
         let subject = match doc {
             Some(d) => subject_index(d.subject),
             None if attachment == Attachment::AttachedBelow => following.and_then(subject_index),
+            None if attachment == Attachment::AttachedTrailing => {
+                preceding_code_node(root, comments[0].span.start, comments[0].start_row)
+                    .and_then(subject_index)
+            }
             None => None,
         };
         // A trailing comment attaches to the code beside it, and `i++ // increment i` is the

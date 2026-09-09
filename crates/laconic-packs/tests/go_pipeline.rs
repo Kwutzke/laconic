@@ -756,3 +756,56 @@ fn naming_the_private_helper_exactly_is_still_a_leak() {
         "an exact-case reference to an unexported symbol stopped firing"
     );
 }
+/// A trailing comment documents the declaration beside it, so it resolves to that subject like any
+/// other documentation. Unresolved, every documented field of a struct counted as running
+/// commentary in `density`'s numerator while the denominator counted the same lines as code.
+#[test]
+fn a_trailing_member_comment_resolves_to_its_subject() {
+    let src =
+        "package x\n\ntype Config struct {\n\tHost string // the gateway, without a scheme\n}\n";
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let block = a
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("without a scheme"))
+        .expect("the trailing comment is extracted");
+    assert_eq!(block.attachment, Attachment::AttachedTrailing);
+    assert!(
+        block.subject.is_some(),
+        "a trailing comment on a field documents that field"
+    );
+}
+
+/// A spec inside a grouped declaration is its own godoc surface — pkg.go.dev renders the comment
+/// above each constant. Left out of the documentable set the comment is Line kind, which carries a
+/// Delete fix at gate tier with autofix **on**, so `laconic fix` deletes the godoc of a published
+/// constant.
+#[test]
+fn a_grouped_spec_comment_is_a_doc_comment() {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+
+    let c = "package x\n\nconst (\n\t// ModeRequired rejects a request carrying no token.\n\tModeRequired = iota\n)\n";
+    let a = analyse(pack, grammar, path, c, &Config::unrestricted()).expect("analysable");
+    let block = a
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("ModeRequired"))
+        .expect("the comment is extracted");
+    assert_eq!(block.kind, CommentKind::Doc);
+
+    // Both spec kinds, because the addition is a two-element list and a const spec alone leaves
+    // `var_spec` free to be deleted with the suite green.
+    let v = "package x\n\nvar (\n\t// DefaultRetries is what the gateway tolerates before backing off.\n\tDefaultRetries = 3\n)\n";
+    let b = analyse(pack, grammar, path, v, &Config::unrestricted()).expect("analysable");
+    let block = b
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("DefaultRetries"))
+        .expect("the comment is extracted");
+    assert_eq!(block.kind, CommentKind::Doc);
+}

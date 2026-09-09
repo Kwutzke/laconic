@@ -4,7 +4,7 @@
 //! resolution and attachment. `commentedOutCode` is the exception in the group: its test is over
 //! the comment body's own nested parse, which does not depend on the surrounding tree at all.
 
-use crate::domain::{Attachment, CommentKind};
+use crate::domain::Attachment;
 use crate::pack::split_identifier;
 use crate::rule::{BlockContext, BlockRule, RuleHit, SubjectContext, SubjectRule};
 use crate::rules::matching::words;
@@ -349,15 +349,16 @@ impl SubjectRule for Density {
     /// Above [`DENSITY_MAX_RATIO`], and nothing else. A floor exempts by absolute count, which is
     /// exactly the short heavily-commented subject the ratio exists to catch.
     fn check(&self, ctx: &SubjectContext) -> Option<RuleHit> {
-        // Doc kind is excluded, and the reason is not positional: `docbloat` is the rule that
-        // measures a doc comment against its subject, so counting one here would measure the same
-        // lines twice under two rules with two different instructions. In Python the docstring sits
-        // *inside* the scope it documents, so a filter keyed on position rather than kind would
-        // count it there and not elsewhere.
+        // Commentary that documents no declaration. A block resolving to a subject is that
+        // subject's documentation and belongs to `docbloat`, which measures it against what it
+        // documents — counting it here would measure the same lines twice under two rules with two
+        // different instructions. This subsumes the Doc-kind test it replaces, since a doc comment
+        // always resolves to a subject, and it additionally excludes a member's documentation that
+        // the language writes as a trailing comment.
         let comment_lines: usize = ctx
             .blocks
             .iter()
-            .filter(|b| b.kind != CommentKind::Doc)
+            .filter(|b| b.subject.is_none())
             .map(|b| b.line_count())
             .sum();
         // A subject holding no code has no denominator, and this rule is the ratio: unlike
