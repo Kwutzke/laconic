@@ -84,7 +84,8 @@ finding.";
 /// thing being read", and it is a starting value with no measurement behind it.
 ///
 /// Both rules multiply in `f64` against it. Stated once because a second integer copy drifted from
-/// this one silently: nothing tied the two, and `docbloat`'s gate has no test of its own.
+/// this one silently, with nothing tying the two and nothing covering `docbloat`'s gate — see
+/// `the_docbloat_note_follows_the_binding_threshold`, which covers it now.
 const NOTE_MULTIPLE: f64 = 2.0;
 
 pub struct Restate;

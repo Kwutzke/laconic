@@ -853,11 +853,11 @@ fn a_spec_inside_a_function_body_is_not_documentable() {
 /// `docbloat`'s note measures against the threshold that bound the comment, not the arm that named
 /// it in the sentence.
 ///
-/// The two differ above two members, where the relative budget passes the cap: selecting by arm
-/// measured "well past" against a number the comment never had to satisfy, so the hint was withheld
-/// from the longest comments and was not monotonic in members — adding one to an unchanged comment
-/// could attach it. Built from the constants, and asserted through the pair that used to disagree,
-/// because this gate had no test at all and its multiple drifted from `density`'s unnoticed.
+/// The two differ wherever the relative budget exceeds the cap: selecting by arm measured "well
+/// past" against a number the comment never had to satisfy, so the hint was withheld from the
+/// longest comments and was not monotonic in members — adding one to an unchanged comment could
+/// attach it. Built from the constants, and asserted across the member count where the arms swap,
+/// which is the pair that used to disagree.
 #[test]
 fn the_docbloat_note_follows_the_binding_threshold() {
     let iface = |lines: usize, members: usize| {
@@ -878,16 +878,19 @@ fn the_docbloat_note_follows_the_binding_threshold() {
             .is_some()
     };
 
-    // The pair the arm selection split: one line past twice the cap, either side of the member
-    // count at which the relative budget overtakes the cap. Both are the same comment.
+    // One line past twice the cap, either side of the member count at which the relative budget
+    // first covers the comment and the sentence falls back to the cap arm. That is the pair the arm
+    // selection split: below it the comment sat on the relative arm and measured against a budget
+    // it had already cleared, so it carried no note; at it the comment took the cap arm and did.
+    // Same comment, one member apart.
     let past_cap = ABSOLUTE_DOC_LINES * 2 + 1;
-    let straddles = ABSOLUTE_DOC_LINES.div_ceil(DOC_LINES_PER_MEMBER) + 1;
+    let flips_to_cap = past_cap.div_ceil(DOC_LINES_PER_MEMBER);
     assert!(
-        note_on(past_cap, straddles),
-        "past twice the cap carries the note whichever arm names the denominator"
+        note_on(past_cap, flips_to_cap - 1),
+        "past twice the cap carries the note on the relative arm too"
     );
     assert!(
-        note_on(past_cap, straddles + 1),
+        note_on(past_cap, flips_to_cap),
         "one more member does not change a comment, so it cannot change the note"
     );
 
