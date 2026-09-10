@@ -19,6 +19,13 @@ pub struct Finding {
     pub tier: Tier,
     pub fix: FixShape,
     pub instruction: String,
+    /// A hint for the reader, never an instruction for the agent.
+    ///
+    /// Separate from `instruction` because the consumer executes instructions: a restructuring hint
+    /// folded into one becomes an order, and the cheapest way to satisfy "restructure" is to add
+    /// code — which grows a ratio's denominator and reaches green with every comment still in
+    /// place. Rendered after the instruction, because the comment is what gets repaired first.
+    pub note: Option<String>,
     /// Covered by an ignore directive naming this rule. Recorded rather than discarded, which is
     /// what lets `deadIgnore` tell "ran and did not fire" from "was suppressed".
     pub suppressed: bool,
@@ -59,6 +66,15 @@ impl Report {
     pub fn finalise(&mut self) {
         self.findings
             .sort_by(|a, b| (&a.file, a.span.start, a.rule).cmp(&(&b.file, b.span.start, b.rule)));
+        // Two findings a consumer cannot tell apart are one finding. A per-subject rule reports
+        // once per enclosing subject, so a Python module whose only statement is a class measures
+        // the same comment run twice — and the spans differ by the closing byte, which is why
+        // sorting alone leaves both. Only exact renders collapse: distinct spans that render
+        // differently are distinct problems and stay.
+        self.findings.dedup_by(|a, b| {
+            (&a.file, a.rule, a.line, a.column, &a.instruction)
+                == (&b.file, b.rule, b.line, b.column, &b.instruction)
+        });
         self.withheld.sort_by(|a, b| a.file.cmp(&b.file));
         self.unreadable.sort_by(|a, b| a.file.cmp(&b.file));
     }
@@ -91,6 +107,9 @@ impl Report {
                 f.rule,
                 f.instruction
             );
+            if let Some(note) = &f.note {
+                let _ = writeln!(out, "  note: {note}");
+            }
         }
         for w in &self.withheld {
             let _ = writeln!(
@@ -106,7 +125,10 @@ impl Report {
         out
     }
 
-    /// One record per line, tab-separated, with a `#` leader on the note kinds.
+    /// One record per line, tab-separated, with a `#` leader on the withheld and unreadable kinds.
+    ///
+    /// A finding is followed by its indented `instruction` line and, where it carries one, an
+    /// indented `note` line — so a finding is one, two or three lines and a parser counts them.
     ///
     /// A *Delete* fix is carried as its byte span, so an agent applies it without re-deriving it
     /// from the instruction text.
@@ -126,6 +148,9 @@ impl Report {
                 fix_str(f.fix),
             );
             let _ = writeln!(out, "\tinstruction\t{}", f.instruction);
+            if let Some(note) = &f.note {
+                let _ = writeln!(out, "\tnote\t{note}");
+            }
         }
         for w in &self.withheld {
             let _ = writeln!(

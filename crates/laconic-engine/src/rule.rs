@@ -16,6 +16,8 @@ use std::ops::Range;
 pub struct RuleHit {
     pub span: Range<usize>,
     pub instruction: String,
+    /// Read, not executed — see [`crate::Finding::note`].
+    pub note: Option<String>,
 }
 
 impl RuleHit {
@@ -23,7 +25,14 @@ impl RuleHit {
         Self {
             span,
             instruction: instruction.into(),
+            note: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.note = Some(note.into());
+        self
     }
 }
 

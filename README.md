@@ -46,8 +46,15 @@ running it from a subdirectory still covers the branch. It cannot be combined wi
 
 `--format machine` is the shape to consume from anything that is not a person: one tab-separated
 record per finding carrying the rule, file, byte span, line, column, tier and fix shape, then an
-indented `instruction` line. The byte span is there so an agent applies a deletion without
-re-deriving the range from the instruction text.
+indented `instruction` line, and sometimes an indented `note` line after it. The byte span is there
+so an agent applies a deletion without re-deriving the range from the instruction text.
+
+**The `note` line is read, not executed.** `density` and `docbloat` attach one where a subject is
+well past the threshold that bound it, to say that most code needs no comment at all, and that one which still
+looks necessary after the repair is usually naming or structure asking to be fixed. It is
+deliberately not part of the instruction: told to restructure, the cheapest path to a clean run is
+to add code, which grows the denominator and leaves every comment in place. Repair the comment;
+report the restructuring.
 
 ## The fifteen rules
 
@@ -65,7 +72,7 @@ autofixed, and most do.
 | `detached` | gate | a comment floating free of the code it describes |
 | `fileref` | gate | a path reference that goes stale on the first rename |
 | `ignoreReason` | gate | a `laconic:ignore` directive with no reason |
-| `density` | warn | too much commentary against the members it covers |
+| `density` | warn | too much commentary against the code it covers |
 | `docbloat` | warn | a doc comment longer than what a caller cannot derive |
 | `implInInterface` | warn | an unexported name in a doc comment a caller cannot use |
 | `hedging` | warn | a hedge standing in for the condition it hides |
@@ -79,9 +86,25 @@ the friction is the price of not deleting good comments unattended. `fileref` an
 are never autofixable at any setting — for `ignoreReason` the only deletion that makes it pass is
 deleting the directive, which silently re-enables the rule it suppressed.
 
-Thresholds are configurable and currently the specification's estimates rather than measurements:
-`absolute_doc_lines = 6`, `doc_lines_per_member = 3`, `density_min_comment_lines = 8`,
-`density_max_ratio = 0.5`.
+Thresholds are configurable: `absolute_doc_lines = 6`, `doc_lines_per_member = 3`,
+`density_allowance = 1.0`. `absolute_doc_lines` is the owner's ruling against the corpus and
+`doc_lines_per_member` is the specification's estimate.
+
+**`density_allowance` is not a ratio.** A subject may carry that many comment lines times the
+**square root** of its code lines — at 1.0, `comment_lines² > code_lines` fires. A constant ratio
+grants a long subject a proportional budget and nothing needs one: at one comment line per five, a
+250-line function was allowed 50, which is how a dense six-line block hid inside thirty-four lines of
+switch and logger setup. The square root grants that function 15 and a four-line one 2, so it is
+looser than a flat ratio on short subjects, where a single *why* is usually right, and stricter on
+long ones, where dilution hides things.
+
+**A subject is a declaration, and a file is not one.** `density` measures the functions, types and
+other declarations a pack names, never the file containing them. A file's commentary is the sum of
+what its declarations carry plus whatever sits between them, so it grows with the file while the
+budget grows with the square root of it — measuring one would report every long file, against a span
+covering the whole file that names nothing to repair. A file-level doc comment is still measured:
+a Rust `//!` or a Python module docstring documents something, so `docbloat` holds it to
+`absolute_doc_lines` like any other doc comment.
 
 ## Languages
 

@@ -6,8 +6,14 @@ integrations run the same binary against the same `laconic.toml` and act on the 
 
 `--format machine` is the shape to consume from anything that is not a person: one tab-separated
 record per finding carrying the rule, the file, the byte span, the line and column, the tier and the
-fix shape, followed by an indented `instruction` line. The byte span is there so an agent applies a
-Delete without re-deriving the range from the instruction text.
+fix shape, followed by an indented `instruction` line, and then an indented `note` line where the
+finding carries one. The byte span is there so an agent applies a Delete without re-deriving the
+range from the instruction text.
+
+**A finding is one, two or three lines, so a parser counts them rather than assuming.** The `note`
+is optional — `density` and `docbloat` attach one well past the threshold that bound the subject,
+and no other rule attaches any. A consumer that reads exactly two lines per finding takes the note
+for the next record, and reports a finding whose rule is the note's first word.
 
 ## The pre-commit hook
 
@@ -77,7 +83,7 @@ The checked-in file is `laconic defaults` — the shipped defaults rendered from
 the two exclusions the engine cannot ship as universal:
 
 - `probe/`, grammar fixtures where a detached comment exists in order to be a detached comment.
-  Every finding in there is correct and none is actionable. It is 26 of the 69 findings a default
+  Every finding in there is correct and none is actionable. It is 34 of the 86 findings a default
   run reports on `crates/`.
 - `target/`, so that `laconic check .` at the repository root means what it looks like it means.
 

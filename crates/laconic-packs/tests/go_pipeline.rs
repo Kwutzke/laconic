@@ -2,9 +2,8 @@
 
 use laconic_engine::domain::{Attachment, CommentKind, Visibility};
 use laconic_engine::{
-    ABSOLUTE_DOC_LINES, Config, DENSITY_MIN_COMMENT_LINES, DOC_LINES_PER_MEMBER, FileAnalysis,
-    Finding, Resolved, Rules, Skipped, all_block_rules, all_subject_rules, analyse, dispatch,
-    resolve,
+    ABSOLUTE_DOC_LINES, Config, DENSITY_ALLOWANCE, DOC_LINES_PER_MEMBER, FileAnalysis, Finding,
+    Resolved, Rules, Skipped, all_block_rules, all_subject_rules, analyse, dispatch, resolve,
 };
 use laconic_packs::all;
 use std::path::Path;
@@ -588,7 +587,7 @@ fn density_reaches_an_interface() {
     assert_eq!(members_of(src, "type Store"), 2);
     assert!(
         rules_fired(src).contains(&"density"),
-        "nine comment lines against two methods; got {:?}",
+        "nine comment lines against four lines of code; got {:?}",
         rules_fired(src)
     );
 }
@@ -658,20 +657,38 @@ fn each_threshold_fires_one_line_past_itself() {
         "the ratio reaches below the cap at one member, or it decides nothing anywhere"
     );
 
-    // `density` counts non-doc commentary, so the run sits inside the interface body.
+    // `density` counts non-doc commentary, so the run sits inside the interface body. Seven
+    // methods plus the two brace lines are the denominator: nine, a perfect square, so the
+    // allowance is a whole number and the two assertions below pin the boundary rather than
+    // bracketing it. Ten was carried over from the ratio, which landed whole on it; sqrt(10) is
+    // irrational, and the pair then only proved the allowance lay somewhere in (3, 4].
+    const DENSITY_CODE_LINES: usize = 9;
     let commented_iface = |lines: usize| {
         let prose = (0..lines)
             .map(|i| format!("\t// Line {i} of running commentary.\n"))
             .collect::<String>();
-        format!("package x\n\ntype S interface {{\n{prose}\n\tGet() error\n\tPut() error\n}}\n")
+        let methods = (0..DENSITY_CODE_LINES - 2)
+            .map(|i| format!("\tM{i}() error\n"))
+            .collect::<String>();
+        // The blank line keeps the run detached: sitting directly above a method it would be that
+        // method's doc comment, and `density` excludes Doc kind. Blank lines are not code, so the
+        // denominator is unchanged.
+        format!("package x\n\ntype S interface {{\n{prose}\n{methods}}}\n")
     };
+    #[expect(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a perfect square small enough to be exact in f64, so the allowance is whole and the cast loses nothing"
+    )]
+    let silent = (DENSITY_ALLOWANCE * (DENSITY_CODE_LINES as f64).sqrt()) as usize;
     assert!(
-        !rules_fired(&commented_iface(DENSITY_MIN_COMMENT_LINES)).contains(&"density"),
-        "the floor is the largest count that stays silent"
+        !rules_fired(&commented_iface(silent)).contains(&"density"),
+        "at the allowance exactly, the rule is silent"
     );
     assert!(
-        rules_fired(&commented_iface(DENSITY_MIN_COMMENT_LINES + 1)).contains(&"density"),
-        "one line past the floor must fire"
+        rules_fired(&commented_iface(silent + 1)).contains(&"density"),
+        "one line past the allowance must fire"
     );
 }
 
@@ -739,5 +756,190 @@ fn naming_the_private_helper_exactly_is_still_a_leak() {
     assert!(
         rules_fired(src).contains(&"implInInterface"),
         "an exact-case reference to an unexported symbol stopped firing"
+    );
+}
+/// A trailing comment documents the declaration beside it, so it resolves to that subject like any
+/// other documentation. Unresolved, every documented field of a struct counted as running
+/// commentary in `density`'s numerator while the denominator counted the same lines as code.
+#[test]
+fn a_trailing_member_comment_resolves_to_its_subject() {
+    let src =
+        "package x\n\ntype Config struct {\n\tHost string // the gateway, without a scheme\n}\n";
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+    let a = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let block = a
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("without a scheme"))
+        .expect("the trailing comment is extracted");
+    assert_eq!(block.attachment, Attachment::AttachedTrailing);
+    assert!(
+        block.subject.is_some(),
+        "a trailing comment on a field documents that field"
+    );
+}
+
+/// A spec inside a grouped declaration is its own godoc surface — pkg.go.dev renders the comment
+/// above each constant. Left out of the documentable set the comment is Line kind, which carries a
+/// Delete fix at gate tier with autofix **on**, so `laconic fix` deletes the godoc of a published
+/// constant.
+#[test]
+fn a_grouped_spec_comment_is_a_doc_comment() {
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+
+    let c = "package x\n\nconst (\n\t// ModeRequired rejects a request carrying no token.\n\tModeRequired = iota\n)\n";
+    let a = analyse(pack, grammar, path, c, &Config::unrestricted()).expect("analysable");
+    let block = a
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("ModeRequired"))
+        .expect("the comment is extracted");
+    assert_eq!(block.kind, CommentKind::Doc);
+
+    // Both spec kinds, because the addition is a two-element list and a const spec alone leaves
+    // `var_spec` free to be deleted with the suite green.
+    let v = "package x\n\nvar (\n\t// DefaultRetries is what the gateway tolerates before backing off.\n\tDefaultRetries = 3\n)\n";
+    let b = analyse(pack, grammar, path, v, &Config::unrestricted()).expect("analysable");
+    let block = b
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("DefaultRetries"))
+        .expect("the comment is extracted");
+    assert_eq!(block.kind, CommentKind::Doc);
+}
+/// A spec is a godoc surface only where its declaration is. `var`, `const` and `type` are also
+/// ordinary statements inside a function body, where a comment above one documents nothing public —
+/// the reason `DOCUMENTABLE_AT_FILE_SCOPE` exists. Listed unconditionally the spec kinds made every
+/// local variable a subject in its own right, and `density` reported on a three-line map literal.
+#[test]
+fn a_spec_inside_a_function_body_is_not_documentable() {
+    let local = "package x\n\ntype Handler int\n\nfunc run() error {\n\tvar handlers = map[string]Handler{\n\t\t// the fallback used when the key is absent\n\t\t\"\": 0,\n\t}\n\t_ = handlers\n\treturn nil\n}\n";
+    assert!(
+        !rules_fired(local).contains(&"density"),
+        "a local var is not a subject; got {:?}",
+        rules_fired(local)
+    );
+
+    let packs = all();
+    let path = Path::new("x.go");
+    let (pack, grammar) = resolve(&packs, path).expect("go pack claims .go");
+    let a = analyse(pack, grammar, path, local, &Config::unrestricted()).expect("analysable");
+    let block = a
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("fallback"))
+        .expect("the comment is extracted");
+    assert_ne!(
+        block.kind,
+        CommentKind::Doc,
+        "a comment inside a function body documents nothing public"
+    );
+
+    // The file-scope half of the same carve-out, so neither arm can be deleted with the suite
+    // green: there the spec **is** the godoc surface.
+    let scoped = "package x\n\nconst (\n\t// ModeRequired rejects a request carrying no token.\n\tModeRequired = iota\n)\n";
+    let b = analyse(pack, grammar, path, scoped, &Config::unrestricted()).expect("analysable");
+    let block = b
+        .blocks
+        .iter()
+        .find(|b| b.body().contains("ModeRequired"))
+        .expect("the comment is extracted");
+    assert_eq!(block.kind, CommentKind::Doc);
+}
+/// `docbloat`'s note measures against the threshold that bound the comment, not the arm that named
+/// it in the sentence.
+///
+/// The two differ wherever the relative budget exceeds the cap: selecting by arm measured "well
+/// past" against a number the comment never had to satisfy, so the hint was withheld from the
+/// longest comments and was not monotonic in members — adding one to an unchanged comment could
+/// attach it. Built from the constants, and asserted across the member count where the arms swap,
+/// which is the pair that used to disagree.
+#[test]
+fn the_docbloat_note_follows_the_binding_threshold() {
+    let iface = |lines: usize, members: usize| {
+        let prose = (0..lines)
+            .map(|i| format!("// Line {i} of prose about the interface below.\n"))
+            .collect::<String>();
+        let methods = (0..members)
+            .map(|i| format!("\tM{i}() error\n"))
+            .collect::<String>();
+        format!("package x\n\n{prose}type S interface {{\n{methods}}}\n")
+    };
+    let note_on = |lines: usize, members: usize| {
+        findings_for(&iface(lines, members))
+            .into_iter()
+            .find(|f| f.rule == "docbloat")
+            .unwrap_or_else(|| panic!("docbloat fires at {lines} lines over {members} members"))
+            .note
+            .is_some()
+    };
+
+    // One line past twice the cap, either side of the member count at which the relative budget
+    // first covers the comment and the sentence falls back to the cap arm. That is the pair the arm
+    // selection split: below it the comment sat on the relative arm and measured against a budget
+    // it had already cleared, so it carried no note; at it the comment took the cap arm and did.
+    // Same comment, one member apart.
+    let past_cap = ABSOLUTE_DOC_LINES * 2 + 1;
+    let flips_to_cap = past_cap.div_ceil(DOC_LINES_PER_MEMBER);
+    assert!(
+        note_on(past_cap, flips_to_cap - 1),
+        "past twice the cap carries the note on the relative arm too"
+    );
+    assert!(
+        note_on(past_cap, flips_to_cap),
+        "one more member does not change a comment, so it cannot change the note"
+    );
+
+    // Inside twice the binding threshold, on each arm in turn.
+    assert!(
+        !note_on(ABSOLUTE_DOC_LINES + 1, 0),
+        "a subject a line over the cap is evidence of nothing"
+    );
+    assert!(
+        !note_on(DOC_LINES_PER_MEMBER + 1, 1),
+        "a subject a line over the ratio is evidence of nothing"
+    );
+}
+
+/// The restructuring hint is a note, not part of the instruction, and it is attached only well past
+/// the threshold.
+///
+/// Both halves matter. Folded into the instruction it becomes an order, and the cheapest way for an
+/// agent to satisfy "restructure" is to add code, which grows the denominator and reaches green with
+/// every comment still in place — the reason it was once left out of the diagnostics altogether. On
+/// every finding it is a sentence nobody reads.
+#[test]
+fn the_restructuring_note_is_separate_and_only_well_past_the_threshold() {
+    // Six comment lines against four of code. The allowance is sqrt(4) = 2, so this is three
+    // times it — past the doubling the note is gated on.
+    let heavy = "package x\n\nfunc heavy() int {\n\t// The two halves below are ordered by call frequency rather than by name,\n\t// which is a convention this package keeps and no other package in the tree\n\t// does. A reader coming from elsewhere will look for alphabetical order and\n\t// will not find it here. The ordering is load-bearing for the generated mock,\n\t// which emits in source order and is diffed in review, so a rename that\n\t// reorders these is a diff nobody can read.\n\tx := 1\n\treturn x\n}\n";
+    let f = findings_for(heavy)
+        .into_iter()
+        .find(|f| f.rule == "density")
+        .expect("density fires at three times the allowance");
+    let note = f.note.expect("well past the threshold carries the note");
+    assert!(
+        note.starts_with("most code needs no comment"),
+        "got {note:?}"
+    );
+    assert!(
+        !f.instruction.contains("naming or structure"),
+        "the hint must not reach the instruction: {:?}",
+        f.instruction
+    );
+
+    // Three comment lines against four of code: past the allowance of 2, inside twice it.
+    let mild = "package x\n\nfunc mild() int {\n\t// the gateway rejects a batch larger than this,\n\t// and answers 413 rather than truncating,\n\t// which the caller reads as retryable\n\tlimit := 32\n\treturn limit\n}\n";
+    let f = findings_for(mild)
+        .into_iter()
+        .find(|f| f.rule == "density")
+        .expect("density fires past the allowance");
+    assert_eq!(
+        f.note, None,
+        "a subject barely over the allowance is evidence of nothing"
     );
 }

@@ -354,6 +354,7 @@ fn only_unsuppressed_delete_findings_from_autofix_rules_are_applicable() {
         tier: Tier::Gate,
         fix,
         instruction: String::new(),
+        note: None,
         suppressed,
     };
 
@@ -418,4 +419,35 @@ fn the_column_counts_characters_not_bytes() {
     let line = src.lines().nth(f.line - 1).expect("the reported line");
     let at: String = line.chars().skip(f.column - 1).take(2).collect();
     assert_eq!(at, "//", "the column lands on the comment marker");
+}
+
+/// `density` is per subject, so a language whose enclosing subject spans the same rows as an inner
+/// one measures the same comment run once per subject. In Python a module whose only statement is a
+/// class produces two findings whose spans differ by the closing byte alone, which sorting cannot
+/// collapse and a reader cannot tell apart.
+#[test]
+fn one_comment_run_is_reported_once_across_nested_subjects() {
+    let src = "class C:\n    # the two ids arrive swapped from the upstream feed\n    # and are re-paired here rather than at the call site\n    # because the caller cannot tell them apart\n    def m(self):\n        x = 1\n        return x\n";
+    let packs = all();
+    let path = Path::new("b.py");
+    let (pack, grammar) = resolve(&packs, path).expect("python pack claims .py");
+    let analysis = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let rules = Rules {
+        block: laconic_engine::all_block_rules(),
+        subject: laconic_engine::all_subject_rules(),
+    };
+    let (findings, note) = dispatch(path, src, &analysis, &Resolved::default(), &rules);
+    let mut report = Report {
+        findings,
+        withheld: note.into_iter().collect(),
+        unreadable: Vec::new(),
+    };
+    report.finalise();
+    let density: Vec<_> = report.active().filter(|f| f.rule == "density").collect();
+    assert_eq!(
+        density.len(),
+        1,
+        "one run, one finding; got {:?}",
+        density.iter().map(|f| &f.instruction).collect::<Vec<_>>()
+    );
 }

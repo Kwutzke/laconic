@@ -4,7 +4,7 @@
 //! resolution and attachment. `commentedOutCode` is the exception in the group: its test is over
 //! the comment body's own nested parse, which does not depend on the surrounding tree at all.
 
-use crate::domain::{Attachment, CommentKind};
+use crate::domain::Attachment;
 use crate::pack::split_identifier;
 use crate::rule::{BlockContext, BlockRule, RuleHit, SubjectContext, SubjectRule};
 use crate::rules::matching::words;
@@ -35,20 +35,58 @@ const MIN_SYMBOL_LEN: usize = 3;
 /// rather than referenced, because the reader who needs the escape has no tracker access.
 pub const ABSOLUTE_DOC_LINES: usize = 6;
 
-/// `docbloat`'s ratio, and `density`'s below it. Both carried over unchanged when the denominator
-/// stopped being rows of text; the corpus run is what calibrates them.
+/// `docbloat`'s ratio. Carried over unchanged when the denominator stopped being rows of text; the
+/// corpus run is what calibrates it.
 ///
 /// Coupled to [`ABSOLUTE_DOC_LINES`]: two members already reach the cap, so this decides firing at
 /// one member and nowhere else. Raising it to loosen the ratio disables the only band it has.
 pub const DOC_LINES_PER_MEMBER: usize = 3;
 
-/// `density` measures non-doc commentary, so it needs both a floor and a ratio: a long run is
-/// unremarkable in a long function and damning in a short one.
+/// Allowed comment lines are this many times the **square root** of a subject's code lines.
 ///
-/// The floor is the largest count that stays *silent*; the rule first fires one line above it. Its
-/// sibling below is the opposite polarity, firing *above* its value.
-pub const DENSITY_MIN_COMMENT_LINES: usize = 8;
-pub const DENSITY_MAX_RATIO: f64 = 0.5;
+/// A constant ratio grants a long subject a proportional budget, and nothing needs one: at 0.2 a
+/// 250-line function was allowed 50 comment lines, which is how a concentrated six-line block hid
+/// inside thirty-four lines of switch and logger setup and the rule reported nothing. The square
+/// root grants that function 15 and a four-line one 2 — looser than the old ratio below 25 code
+/// lines, stricter above, crossing over exactly there.
+///
+/// The two directions are the two failures the ratio produced, in one curve. Its false positives
+/// were single `why` comments in short subjects, which are now inside the budget; its false
+/// negatives were dense blocks diluted by length, which are now outside it.
+///
+/// At 1.0 there is no free parameter: the rule is `comment_lines² > code_lines`. Measured over
+/// `business-platform-backend/internal`, 370 of 2979 commented subjects fire against 305 under the
+/// old ratio, 218 of them shared — a different selection rather than a larger one.
+///
+/// **The curve buys recall, not precision.** A hand-judged fifteen ran 8/15 against 7/14 for the
+/// ratio it replaced, and the misses changed shape rather than thinning: the ratio's were single
+/// `why` comments in short subjects, and these are long functions carrying dense measured
+/// rationale — WAL semantics, search scoring, cross-system field names — which is the population a
+/// curve stricter on length was always going to surface. 1.0 itself is fitted to two cases: 1.2
+/// misses both, so the value is sensitive and remains uncalibrated.
+pub const DENSITY_ALLOWANCE: f64 = 1.0;
+
+/// The hint `density` and `docbloat` add once a subject is well past the threshold that bound it.
+///
+/// Ordered after the instruction for a reason: the comment is what gets repaired, and only what
+/// survives that repair is evidence about the code. It is a note rather than part of the
+/// instruction because the consumer executes instructions — told to restructure, an agent reaches
+/// green fastest by adding code, which grows the denominator and leaves every comment in place.
+const RESTRUCTURE_NOTE: &str = "most code needs no comment; one that earns its place says why, not \
+what. If it still seems necessary here, that is usually naming or structure asking to be fixed — \
+repair the comment first, and report the restructuring rather than doing it to satisfy this \
+finding.";
+
+/// How far past its threshold a subject must be before [`RESTRUCTURE_NOTE`] is attached.
+///
+/// A subject a line over is evidence of nothing, and a hint on every finding is a hint nobody
+/// reads. Doubling is the coarsest band separating "slightly over" from "the commentary is the
+/// thing being read", and it is a starting value with no measurement behind it.
+///
+/// Both rules multiply in `f64` against it. Stated once because a second integer copy drifted from
+/// this one silently, with nothing tying the two and nothing covering `docbloat`'s gate — see
+/// `the_docbloat_note_follows_the_binding_threshold`, which covers it now.
+const NOTE_MULTIPLE: f64 = 2.0;
 
 pub struct Restate;
 
@@ -244,13 +282,18 @@ impl BlockRule for DocBloat {
         if !over_absolute && !over_relative {
             return None;
         }
-        // Which test fired decides everything after the line count, the naming of the denominator
-        // included, because they are different failures. Neither sentence says "move the rest into
+        // Which test fired decides the sentence, the naming of the denominator included, because
+        // they are different failures. It does not decide the note below, which measures against
+        // the threshold that bound rather than the arm that named it.
+        //
+        // Neither sentence says "move the rest into
         // the body" any more: that instruction taught a repairing agent to relocate prose into the
         // function it documented, where `density` then reported it — one rule instructing what
-        // another punishes. Neither invites restructuring the subject either: the denominator is
-        // the agent's to change, and inflating it reaches green with the comment untouched.
-        Some(RuleHit::new(
+        // another punishes. Restructuring reaches the reader through [`RESTRUCTURE_NOTE`] instead,
+        // which is a note rather than an instruction for exactly the reason it was once left out
+        // altogether: the denominator is the agent's to change, and inflating it reaches green with
+        // the comment untouched.
+        let hit = RuleHit::new(
             ctx.block.span.clone(),
             if over_relative {
                 format!(
@@ -262,7 +305,31 @@ impl BlockRule for DocBloat {
                     "shorten this doc comment: {lines} lines — keep only what a reader cannot derive; the rest belongs in a document if it belongs anywhere"
                 )
             },
-        ))
+        );
+        // The smallest threshold the comment broke, not the arm that named it. Selecting by arm
+        // measured "well past" against a budget the comment never had to satisfy: above two members
+        // the relative budget passes the cap, so thirteen lines on four members sat inside twice
+        // twelve and carried no note, while the same thirteen on five members fell to the cap arm
+        // and carried one. That made the hint non-monotonic in members — adding one to an unchanged
+        // comment could attach it — and withheld it from the longest comments, which are the ones
+        // it exists for.
+        let cap = ctx.thresholds.absolute_doc_lines;
+        let per_member = members.saturating_mul(ctx.thresholds.doc_lines_per_member);
+        let budget = match (over_absolute, over_relative) {
+            (true, true) => cap.min(per_member),
+            (true, false) => cap,
+            (false, _) => per_member,
+        };
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "line counts are far inside f64's exact integer range"
+        )]
+        let well_past = lines as f64 > budget as f64 * NOTE_MULTIPLE;
+        Some(if well_past {
+            hit.with_note(RESTRUCTURE_NOTE)
+        } else {
+            hit
+        })
     }
 }
 
@@ -272,6 +339,23 @@ fn members_phrase(members: usize) -> String {
     match members {
         1 => "1 member".to_string(),
         n => format!("{n} members"),
+    }
+}
+
+/// Same reason as [`members_phrase`].
+fn code_lines_phrase(lines: usize) -> String {
+    match lines {
+        1 => "1 line of code".to_string(),
+        n => format!("{n} lines of code"),
+    }
+}
+
+/// Same reason as [`members_phrase`]. Reached only under a configured `density_allowance` below
+/// 1.0: at the shipped 1.0 the budget is at least `sqrt(1)`, so one comment line never exceeds it.
+fn comment_lines_phrase(lines: usize) -> String {
+    match lines {
+        1 => "1 comment line".to_string(),
+        n => format!("{n} comment lines"),
     }
 }
 
@@ -323,42 +407,62 @@ impl SubjectRule for Density {
         "density"
     }
 
-    /// Past [`DENSITY_MIN_COMMENT_LINES`] **and** above [`DENSITY_MAX_RATIO`]. Both are the
-    /// specification's stated values with no measurement behind them. The ratio is the weaker of the
-    /// two by a wide margin: with the floor where it is, suppressing a finding by ratio alone needs
-    /// a subject declaring at least eighteen members, so on ordinary code the floor decides.
+    /// Past [`DENSITY_ALLOWANCE`] times the square root of a **declaration's** code lines, and
+    /// nothing else. A floor exempts by absolute count, which is exactly the short heavily-commented
+    /// subject the budget exists to catch.
+    ///
+    /// A file is not a declaration and is not measured. Its commentary is the sum of what its
+    /// declarations carry plus whatever sits between them, so it grows with the file while the
+    /// budget grows with the square root, and every long file fails a test it cannot pass. The
+    /// finding also spanned the whole file, which names nothing to repair.
     fn check(&self, ctx: &SubjectContext) -> Option<RuleHit> {
-        // Doc kind is excluded, and the reason is not positional: `docbloat` is the rule that
-        // measures a doc comment against its subject, so counting one here would measure the same
-        // lines twice under two rules with two different instructions. In Python the docstring sits
-        // *inside* the scope it documents, so a filter keyed on position rather than kind would
-        // count it there and not elsewhere.
+        if ctx.subject.file_scope {
+            return None;
+        }
+        // Commentary that documents no declaration. A block resolving to a subject is that
+        // subject's documentation and belongs to `docbloat`, which measures it against what it
+        // documents — counting it here would measure the same lines twice under two rules with two
+        // different instructions. This subsumes the Doc-kind test it replaces, since a doc comment
+        // always resolves to a subject, and it additionally excludes a member's documentation that
+        // the language writes as a trailing comment.
         let comment_lines: usize = ctx
             .blocks
             .iter()
-            .filter(|b| b.kind != CommentKind::Doc)
+            .filter(|b| b.subject.is_none())
             .map(|b| b.line_count())
             .sum();
-        if comment_lines <= ctx.thresholds.density_min_comment_lines {
-            return None;
-        }
-        // A subject declaring no members has no denominator, and this rule is the ratio: unlike
+        // A subject holding no code has no denominator, and this rule is the ratio: unlike
         // `docbloat` it carries no absolute test to fall back on.
-        let members = ctx.subject.member_count;
-        if members == 0 {
+        let code_lines = ctx.subject.code_lines;
+        if code_lines == 0 {
             return None;
         }
-        let ratio = comment_lines as f64 / members as f64;
-        if ratio <= ctx.thresholds.density_max_ratio {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "line counts are far inside f64's exact integer range"
+        )]
+        let allowed = ctx.thresholds.density_allowance * (code_lines as f64).sqrt();
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "line counts are far inside f64's exact integer range"
+        )]
+        let lines = comment_lines as f64;
+        if lines <= allowed {
             return None;
         }
-        Some(RuleHit::new(
+        let hit = RuleHit::new(
             ctx.subject.span.clone(),
             format!(
-                "reduce the commentary here: {comment_lines} comment lines against {} — keep the ones a reader could not derive and delete the rest",
-                members_phrase(members)
+                "reduce the commentary here: {} against {} — keep the ones a reader could not derive and delete the rest",
+                comment_lines_phrase(comment_lines),
+                code_lines_phrase(code_lines)
             ),
-        ))
+        );
+        Some(if lines > allowed * NOTE_MULTIPLE {
+            hit.with_note(RESTRUCTURE_NOTE)
+        } else {
+            hit
+        })
     }
 }
 
@@ -392,7 +496,9 @@ mod tests {
     fn the_shipped_thresholds_are_the_calibrated_defaults() {
         assert_eq!(ABSOLUTE_DOC_LINES, 6, "owner's ruling against the corpus");
         assert_eq!(DOC_LINES_PER_MEMBER, 3, "carried over, uncalibrated");
-        assert_eq!(DENSITY_MIN_COMMENT_LINES, 8, "silent at 8, fires at 9");
-        assert_eq!(DENSITY_MAX_RATIO, 0.5, "carried over, uncalibrated");
+        assert_eq!(
+            DENSITY_ALLOWANCE, 1.0,
+            "fitted to two cases, not calibrated"
+        );
     }
 }

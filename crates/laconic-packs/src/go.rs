@@ -45,6 +45,16 @@ pub(crate) const DOCUMENTABLE_ANYWHERE: &[&str] = &[
     "package_clause",
 ];
 
+/// Specs inside a grouped declaration, which carry a godoc comment only where the declaration does.
+///
+/// pkg.go.dev renders the comment above each constant, not only the one above the block, so a spec
+/// is its own godoc surface — but only at file scope, for the reason
+/// [`DOCUMENTABLE_AT_FILE_SCOPE`] exists: a `var` or `const` inside a function body is an ordinary
+/// statement, and a comment above one documents nothing public. Listed unconditionally these made
+/// every local variable a subject in its own right, and `density` reported a warn finding on a
+/// commented map literal three lines long.
+pub(crate) const DOCUMENTABLE_SPECS: &[&str] = &["const_spec", "var_spec"];
+
 /// Declarations that carry a godoc comment only at file scope. `var`, `const` and `type` are also
 /// ordinary statements inside a function body, where a comment above one documents nothing public.
 pub(crate) const DOCUMENTABLE_AT_FILE_SCOPE: &[&str] =
@@ -57,8 +67,27 @@ fn is_documentable(node: Node) -> bool {
     if node.kind() == "type_elem" {
         return node.parent().is_some_and(|p| p.kind() == "interface_type");
     }
+    if DOCUMENTABLE_SPECS.contains(&node.kind()) {
+        return enclosing_declaration_is_at_file_scope(node);
+    }
     DOCUMENTABLE_AT_FILE_SCOPE.contains(&node.kind())
         && node.parent().is_some_and(|p| p.kind() == "source_file")
+}
+
+/// Whether the declaration a spec belongs to sits at file scope.
+///
+/// Walked rather than tested at a fixed depth: `var` wraps its specs in a `var_spec_list` while
+/// `const` lists them as direct children, so the declaration is one or two levels up depending on
+/// which keyword it is.
+fn enclosing_declaration_is_at_file_scope(node: Node) -> bool {
+    let mut current = node;
+    while let Some(parent) = current.parent() {
+        if DOCUMENTABLE_AT_FILE_SCOPE.contains(&parent.kind()) {
+            return parent.parent().is_some_and(|p| p.kind() == "source_file");
+        }
+        current = parent;
+    }
+    false
 }
 
 pub struct GoPack;

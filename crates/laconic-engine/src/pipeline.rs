@@ -15,6 +15,7 @@ use crate::domain::{
 use crate::exclude::Config;
 use crate::pack::Pack;
 use laconic_grammars::Grammar;
+use std::ops::Range;
 use std::path::Path;
 use tree_sitter::Node;
 
@@ -127,9 +128,10 @@ pub fn analyse(
     // `density` measures a function nobody documented, and a subject that exists only where a
     // block attached would make that rule unable to see one.
     let subject_nodes = pack.subject_nodes(root);
+    let in_comment = comment_mask(src, all.iter().map(|(_, c)| c.span.clone()));
     let subjects: Vec<Subject> = subject_nodes
         .iter()
-        .map(|n| build_subject(pack, *n, src))
+        .map(|n| build_subject(pack, *n, root, src, &in_comment))
         .collect();
     let subject_index = |node: Node| subject_nodes.iter().position(|s| s.id() == node.id());
 
@@ -202,9 +204,18 @@ pub fn analyse(
             }
         };
 
+        // A trailing comment documents the declaration beside it — `Field T // what it carries` is
+        // that field's godoc — so it resolves to a subject like any other documentation. Left
+        // unresolved, `density` counted every documented member of a struct as running commentary
+        // while the denominator counted the same lines as code, and the ratio could not be
+        // satisfied by any amount of correct documentation.
         let subject = match doc {
             Some(d) => subject_index(d.subject),
             None if attachment == Attachment::AttachedBelow => following.and_then(subject_index),
+            None if attachment == Attachment::AttachedTrailing => {
+                preceding_code_node(root, comments[0].span.start, comments[0].start_row)
+                    .and_then(subject_index)
+            }
             None => None,
         };
         // A trailing comment attaches to the code beside it, and `i++ // increment i` is the
@@ -436,13 +447,56 @@ fn next_code_node(root: Node<'_>, offset: usize) -> Option<Node<'_>> {
     best
 }
 
-fn build_subject(pack: &dyn Pack, node: Node, src: &str) -> Subject {
+fn build_subject(
+    pack: &dyn Pack,
+    node: Node,
+    root: Node,
+    src: &str,
+    in_comment: &[bool],
+) -> Subject {
     Subject {
         span: node.byte_range(),
         bound_identifiers: pack.bound_identifiers(node, src),
         member_count: pack.member_count(node, src),
+        code_lines: code_lines(src, node.byte_range(), in_comment),
+        file_scope: node.id() == root.id(),
         visibility: pack.visibility(node, src),
     }
+}
+
+/// One entry per byte of `src`, true where a comment covers it.
+///
+/// Built from every comment in the file rather than from the blocks a rule receives: a machine
+/// directive and an ignore directive are both lifted out before blocks are formed, and neither is
+/// code.
+fn comment_mask(src: &str, comments: impl Iterator<Item = Range<usize>>) -> Vec<bool> {
+    let mut mask = vec![false; src.len()];
+    for c in comments {
+        let end = c.end.min(src.len());
+        if c.start < end {
+            mask[c.start..end].fill(true);
+        }
+    }
+    mask
+}
+
+/// Lines in `span` holding a byte that is neither whitespace nor inside a comment.
+///
+/// A line carrying a trailing comment counts here **and** in the numerator, since it holds bytes of
+/// both.
+fn code_lines(src: &str, span: Range<usize>, in_comment: &[bool]) -> usize {
+    let mut lines = 0;
+    let mut has_code = false;
+    for at in span {
+        let b = src.as_bytes()[at];
+        if b == b'\n' {
+            lines += usize::from(has_code);
+            has_code = false;
+        } else if !b.is_ascii_whitespace() && !in_comment[at] {
+            has_code = true;
+        }
+    }
+    lines + usize::from(has_code)
 }
 
 fn has_error_nodes(root: Node) -> bool {

@@ -14,7 +14,7 @@ fn parse(text: &str) -> ConfigFile {
     toml::from_str(text).expect("parses")
 }
 
-/// The four thresholds round-trip: stating their defaults resolves to the defaults.
+/// The three thresholds round-trip: stating their defaults resolves to the defaults.
 ///
 /// **Not the whole of AC9.** `RuleConfig` carries one `tier` per rule while dispositions are per
 /// kind, so a config stating `narration`'s default Line tier would also set its Doc tier to Gate
@@ -30,8 +30,7 @@ fn stating_the_defaults_changes_nothing() {
         [thresholds]
         absolute_doc_lines = 6
         doc_lines_per_member = 3
-        density_min_comment_lines = 8
-        density_max_ratio = 0.5
+        density_allowance = 1.0
         "#,
     );
     let from_empty = empty.resolve("go").thresholds;

@@ -124,7 +124,7 @@ fn a_directive_does_not_hide_the_doc_comment_above_it() {
 }
 
 /// A Rust statement-level attribute is a named child of `block`, so counting it inflates
-/// `density`'s denominator by one per attribute. The probe pins this as a grammar fact; nothing
+/// `member_count` by one per attribute. The probe pins this as a grammar fact; nothing
 /// pinned the pack's own exclusion.
 ///
 /// **Both forms**, because the exclusion is a two-element list and an outer attribute alone leaves

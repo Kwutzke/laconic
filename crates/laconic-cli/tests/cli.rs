@@ -94,6 +94,46 @@ fn the_machine_format_carries_the_span_an_agent_edits_with() {
         instruction.starts_with("\tinstruction\t"),
         "got {instruction:?}"
     );
+    assert_eq!(lines.next(), None, "banner carries no note");
+}
+
+/// A finding is one, two or three lines, and the third is what a consumer counting two drops.
+///
+/// `banner` above never reaches the note, so the contract's optional line went unasserted while
+/// `docs/integrations.md` still specified exactly two lines per finding. A parser written to that
+/// reads `\tnote\t…` as the next record and reports a finding whose rule is `most`.
+#[test]
+fn a_note_is_a_third_indented_line_under_its_own_finding() {
+    let dir = tempdir("machine-note");
+    // Six comment lines against four of code: three times the allowance of sqrt(4), so `density`
+    // fires and is well past the threshold that bound it.
+    write(
+        &dir,
+        "x.go",
+        "package x\n\nfunc heavy() int {\n\t// The two halves below are ordered by call frequency rather than by name,\n\t// which is a convention this package keeps and no other package in the tree\n\t// does. A reader coming from elsewhere will look for alphabetical order and\n\t// will not find it here. The ordering is load-bearing for the generated mock,\n\t// which emits in source order and is diffed in review, so a rename that\n\t// reorders these is a diff nobody can read.\n\tx := 1\n\treturn x\n}\n",
+    );
+    let run = laconic(&dir, &["check", "--no-config", "--format", "machine"]);
+
+    let lines: Vec<&str> = run.stdout.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| l.starts_with("finding\tdensity\t"))
+        .unwrap_or_else(|| panic!("a density record, got {:?}", run.stdout));
+    assert!(
+        lines[at + 1].starts_with("\tinstruction\t"),
+        "got {:?}",
+        lines[at + 1]
+    );
+    let note = lines[at + 2];
+    assert!(
+        note.starts_with("\tnote\tmost code needs no comment"),
+        "got {note:?}"
+    );
+    assert!(
+        lines.get(at + 3).is_none_or(|l| !l.starts_with('\t')),
+        "the note is the last indented line of its finding: {:?}",
+        lines.get(at + 3)
+    );
 }
 
 fn parse_field(field: &str) -> usize {
