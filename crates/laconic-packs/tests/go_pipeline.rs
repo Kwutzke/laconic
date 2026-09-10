@@ -657,10 +657,12 @@ fn each_threshold_fires_one_line_past_itself() {
         "the ratio reaches below the cap at one member, or it decides nothing anywhere"
     );
 
-    // `density` counts non-doc commentary, so the run sits inside the interface body. Eight
-    // methods plus the two brace lines are the denominator: ten, chosen so the ratio lands on a
-    // whole number of comment lines and the boundary is exact rather than rounded.
-    const DENSITY_CODE_LINES: usize = 10;
+    // `density` counts non-doc commentary, so the run sits inside the interface body. Seven
+    // methods plus the two brace lines are the denominator: nine, a perfect square, so the
+    // allowance is a whole number and the two assertions below pin the boundary rather than
+    // bracketing it. Ten was carried over from the ratio, which landed whole on it; sqrt(10) is
+    // irrational, and the pair then only proved the allowance lay somewhere in (3, 4].
+    const DENSITY_CODE_LINES: usize = 9;
     let commented_iface = |lines: usize| {
         let prose = (0..lines)
             .map(|i| format!("\t// Line {i} of running commentary.\n"))
@@ -677,7 +679,7 @@ fn each_threshold_fires_one_line_past_itself() {
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
-        reason = "a line count small enough to be exact in f64, truncated back to the largest silent count"
+        reason = "a perfect square small enough to be exact in f64, so the allowance is whole and the cast loses nothing"
     )]
     let silent = (DENSITY_ALLOWANCE * (DENSITY_CODE_LINES as f64).sqrt()) as usize;
     assert!(
@@ -848,6 +850,58 @@ fn a_spec_inside_a_function_body_is_not_documentable() {
         .expect("the comment is extracted");
     assert_eq!(block.kind, CommentKind::Doc);
 }
+/// `docbloat`'s note measures against the threshold that bound the comment, not the arm that named
+/// it in the sentence.
+///
+/// The two differ above two members, where the relative budget passes the cap: selecting by arm
+/// measured "well past" against a number the comment never had to satisfy, so the hint was withheld
+/// from the longest comments and was not monotonic in members — adding one to an unchanged comment
+/// could attach it. Built from the constants, and asserted through the pair that used to disagree,
+/// because this gate had no test at all and its multiple drifted from `density`'s unnoticed.
+#[test]
+fn the_docbloat_note_follows_the_binding_threshold() {
+    let iface = |lines: usize, members: usize| {
+        let prose = (0..lines)
+            .map(|i| format!("// Line {i} of prose about the interface below.\n"))
+            .collect::<String>();
+        let methods = (0..members)
+            .map(|i| format!("\tM{i}() error\n"))
+            .collect::<String>();
+        format!("package x\n\n{prose}type S interface {{\n{methods}}}\n")
+    };
+    let note_on = |lines: usize, members: usize| {
+        findings_for(&iface(lines, members))
+            .into_iter()
+            .find(|f| f.rule == "docbloat")
+            .unwrap_or_else(|| panic!("docbloat fires at {lines} lines over {members} members"))
+            .note
+            .is_some()
+    };
+
+    // The pair the arm selection split: one line past twice the cap, either side of the member
+    // count at which the relative budget overtakes the cap. Both are the same comment.
+    let past_cap = ABSOLUTE_DOC_LINES * 2 + 1;
+    let straddles = ABSOLUTE_DOC_LINES.div_ceil(DOC_LINES_PER_MEMBER) + 1;
+    assert!(
+        note_on(past_cap, straddles),
+        "past twice the cap carries the note whichever arm names the denominator"
+    );
+    assert!(
+        note_on(past_cap, straddles + 1),
+        "one more member does not change a comment, so it cannot change the note"
+    );
+
+    // Inside twice the binding threshold, on each arm in turn.
+    assert!(
+        !note_on(ABSOLUTE_DOC_LINES + 1, 0),
+        "a subject a line over the cap is evidence of nothing"
+    );
+    assert!(
+        !note_on(DOC_LINES_PER_MEMBER + 1, 1),
+        "a subject a line over the ratio is evidence of nothing"
+    );
+}
+
 /// The restructuring hint is a note, not part of the instruction, and it is attached only well past
 /// the threshold.
 ///

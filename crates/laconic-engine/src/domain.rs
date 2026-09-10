@@ -85,6 +85,17 @@ pub struct Subject {
     /// ratio measured a 935-line subject as though it were a one-liner. Counted in the engine so a
     /// pack cannot get it wrong.
     pub code_lines: usize,
+    /// Whether this subject is the file itself rather than a declaration inside it.
+    ///
+    /// The Rust and Python packs make the parse root a subject so that a module docstring and an
+    /// inner `//!` doc have something to document; Go, Java and TypeScript declare no root. That
+    /// makes the file a denominator for `density`, whose budget is calibrated for a declaration —
+    /// and a file's commentary grows with its length while the budget grows with its square root,
+    /// so every long file exceeded it and the finding spanned the whole file, naming no repair.
+    ///
+    /// Decided in the engine from the parse root, like [`Self::code_lines`], so a pack cannot get
+    /// it wrong.
+    pub file_scope: bool,
     pub visibility: Visibility,
 }
 

@@ -47,7 +47,7 @@ pub const DOC_LINES_PER_MEMBER: usize = 3;
 /// A constant ratio grants a long subject a proportional budget, and nothing needs one: at 0.2 a
 /// 250-line function was allowed 50 comment lines, which is how a concentrated six-line block hid
 /// inside thirty-four lines of switch and logger setup and the rule reported nothing. The square
-/// root grants that function 16 and a four-line one 2 — looser than the old ratio below 25 code
+/// root grants that function 15 and a four-line one 2 — looser than the old ratio below 25 code
 /// lines, stricter above, crossing over exactly there.
 ///
 /// The two directions are the two failures the ratio produced, in one curve. Its false positives
@@ -56,7 +56,7 @@ pub const DOC_LINES_PER_MEMBER: usize = 3;
 ///
 /// At 1.0 there is no free parameter: the rule is `comment_lines² > code_lines`. Measured over
 /// `business-platform-backend/internal`, 370 of 2979 commented subjects fire against 305 under the
-/// old ratio — 218 shared, 152 new, 90 dropped, so a different selection rather than a larger one.
+/// old ratio, 218 of them shared — a different selection rather than a larger one.
 ///
 /// **The curve buys recall, not precision.** A hand-judged fifteen ran 8/15 against 7/14 for the
 /// ratio it replaced, and the misses changed shape rather than thinning: the ratio's were single
@@ -66,7 +66,7 @@ pub const DOC_LINES_PER_MEMBER: usize = 3;
 /// misses both, so the value is sensitive and remains uncalibrated.
 pub const DENSITY_ALLOWANCE: f64 = 1.0;
 
-/// The hint a proportional rule adds once a subject is well past its threshold.
+/// The hint `density` and `docbloat` add once a subject is well past the threshold that bound it.
 ///
 /// Ordered after the instruction for a reason: the comment is what gets repaired, and only what
 /// survives that repair is evidence about the code. It is a note rather than part of the
@@ -82,10 +82,10 @@ finding.";
 /// A subject a line over is evidence of nothing, and a hint on every finding is a hint nobody
 /// reads. Doubling is the coarsest band separating "slightly over" from "the commentary is the
 /// thing being read", and it is a starting value with no measurement behind it.
+///
+/// Both rules multiply in `f64` against it. Stated once because a second integer copy drifted from
+/// this one silently: nothing tied the two, and `docbloat`'s gate has no test of its own.
 const NOTE_MULTIPLE: f64 = 2.0;
-
-/// [`NOTE_MULTIPLE`] for the rule whose budgets are line counts rather than a ratio.
-const NOTE_MULTIPLE_INT: usize = 2;
 
 pub struct Restate;
 
@@ -281,8 +281,11 @@ impl BlockRule for DocBloat {
         if !over_absolute && !over_relative {
             return None;
         }
-        // Which test fired decides everything after the line count, the naming of the denominator
-        // included, because they are different failures. Neither sentence says "move the rest into
+        // Which test fired decides the sentence, the naming of the denominator included, because
+        // they are different failures. It does not decide the note below, which measures against
+        // the threshold that bound rather than the arm that named it.
+        //
+        // Neither sentence says "move the rest into
         // the body" any more: that instruction taught a repairing agent to relocate prose into the
         // function it documented, where `density` then reported it — one rule instructing what
         // another punishes. Restructuring reaches the reader through [`RESTRUCTURE_NOTE`] instead,
@@ -302,12 +305,26 @@ impl BlockRule for DocBloat {
                 )
             },
         );
-        let budget = if over_relative {
-            members.saturating_mul(ctx.thresholds.doc_lines_per_member)
-        } else {
-            ctx.thresholds.absolute_doc_lines
+        // The smallest threshold the comment broke, not the arm that named it. Selecting by arm
+        // measured "well past" against a budget the comment never had to satisfy: above two members
+        // the relative budget passes the cap, so thirteen lines on four members sat inside twice
+        // twelve and carried no note, while the same thirteen on five members fell to the cap arm
+        // and carried one. That made the hint non-monotonic in members — adding one to an unchanged
+        // comment could attach it — and withheld it from the longest comments, which are the ones
+        // it exists for.
+        let cap = ctx.thresholds.absolute_doc_lines;
+        let per_member = members.saturating_mul(ctx.thresholds.doc_lines_per_member);
+        let budget = match (over_absolute, over_relative) {
+            (true, true) => cap.min(per_member),
+            (true, false) => cap,
+            (false, _) => per_member,
         };
-        Some(if lines > budget.saturating_mul(NOTE_MULTIPLE_INT) {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "line counts are far inside f64's exact integer range"
+        )]
+        let well_past = lines as f64 > budget as f64 * NOTE_MULTIPLE;
+        Some(if well_past {
             hit.with_note(RESTRUCTURE_NOTE)
         } else {
             hit
@@ -332,8 +349,8 @@ fn code_lines_phrase(lines: usize) -> String {
     }
 }
 
-/// Same reason as [`members_phrase`]. Reachable only since the floor was retired: below it, one
-/// comment line never fired.
+/// Same reason as [`members_phrase`]. Reached only under a configured `density_allowance` below
+/// 1.0: at the shipped 1.0 the budget is at least `sqrt(1)`, so one comment line never exceeds it.
 fn comment_lines_phrase(lines: usize) -> String {
     match lines {
         1 => "1 comment line".to_string(),
@@ -389,10 +406,18 @@ impl SubjectRule for Density {
         "density"
     }
 
-    /// Past [`DENSITY_ALLOWANCE`] times the square root of the subject's code lines, and nothing
-    /// else. A floor exempts by absolute count, which is exactly the short heavily-commented
+    /// Past [`DENSITY_ALLOWANCE`] times the square root of a **declaration's** code lines, and
+    /// nothing else. A floor exempts by absolute count, which is exactly the short heavily-commented
     /// subject the budget exists to catch.
+    ///
+    /// A file is not a declaration and is not measured. Its commentary is the sum of what its
+    /// declarations carry plus whatever sits between them, so it grows with the file while the
+    /// budget grows with the square root, and every long file fails a test it cannot pass. The
+    /// finding also spanned the whole file, which names nothing to repair.
     fn check(&self, ctx: &SubjectContext) -> Option<RuleHit> {
+        if ctx.subject.file_scope {
+            return None;
+        }
         // Commentary that documents no declaration. A block resolving to a subject is that
         // subject's documentation and belongs to `docbloat`, which measures it against what it
         // documents — counting it here would measure the same lines twice under two rules with two

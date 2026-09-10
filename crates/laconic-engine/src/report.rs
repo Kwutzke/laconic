@@ -125,7 +125,10 @@ impl Report {
         out
     }
 
-    /// One record per line, tab-separated, with a `#` leader on the note kinds.
+    /// One record per line, tab-separated, with a `#` leader on the withheld and unreadable kinds.
+    ///
+    /// A finding is followed by its indented `instruction` line and, where it carries one, an
+    /// indented `note` line — so a finding is one, two or three lines and a parser counts them.
     ///
     /// A *Delete* fix is carried as its byte span, so an agent applies it without re-deriving it
     /// from the instruction text.

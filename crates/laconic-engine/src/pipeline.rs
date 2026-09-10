@@ -131,7 +131,7 @@ pub fn analyse(
     let in_comment = comment_mask(src, all.iter().map(|(_, c)| c.span.clone()));
     let subjects: Vec<Subject> = subject_nodes
         .iter()
-        .map(|n| build_subject(pack, *n, src, &in_comment))
+        .map(|n| build_subject(pack, *n, root, src, &in_comment))
         .collect();
     let subject_index = |node: Node| subject_nodes.iter().position(|s| s.id() == node.id());
 
@@ -447,12 +447,19 @@ fn next_code_node(root: Node<'_>, offset: usize) -> Option<Node<'_>> {
     best
 }
 
-fn build_subject(pack: &dyn Pack, node: Node, src: &str, in_comment: &[bool]) -> Subject {
+fn build_subject(
+    pack: &dyn Pack,
+    node: Node,
+    root: Node,
+    src: &str,
+    in_comment: &[bool],
+) -> Subject {
     Subject {
         span: node.byte_range(),
         bound_identifiers: pack.bound_identifiers(node, src),
         member_count: pack.member_count(node, src),
         code_lines: code_lines(src, node.byte_range(), in_comment),
+        file_scope: node.id() == root.id(),
         visibility: pack.visibility(node, src),
     }
 }

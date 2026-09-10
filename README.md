@@ -51,9 +51,10 @@ so an agent applies a deletion without re-deriving the range from the instructio
 
 **The `note` line is read, not executed.** `density` and `docbloat` attach one where a subject is
 well past its threshold, to say that most code needs no comment at all, and that one which still
-looks necessary after the repair is usually naming or structure asking to be fixed. It is deliberately not part of the instruction: told
-to restructure, the cheapest path to a clean run is to add code, which grows the denominator and
-leaves every comment in place. Repair the comment; report the restructuring.
+looks necessary after the repair is usually naming or structure asking to be fixed. It is
+deliberately not part of the instruction: told to restructure, the cheapest path to a clean run is
+to add code, which grows the denominator and leaves every comment in place. Repair the comment;
+report the restructuring.
 
 ## The fifteen rules
 
@@ -93,7 +94,7 @@ Thresholds are configurable: `absolute_doc_lines = 6`, `doc_lines_per_member = 3
 **square root** of its code lines — at 1.0, `comment_lines² > code_lines` fires. A constant ratio
 grants a long subject a proportional budget and nothing needs one: at one comment line per five, a
 250-line function was allowed 50, which is how a dense six-line block hid inside thirty-four lines of
-switch and logger setup. The square root grants that function 16 and a four-line one 2, so it is
+switch and logger setup. The square root grants that function 15 and a four-line one 2, so it is
 looser than a flat ratio on short subjects, where a single *why* is usually right, and stricter on
 long ones, where dilution hides things.
 
