@@ -126,11 +126,15 @@ fn banner_reason(body: &str, labels_allowed: bool) -> Option<&'static str> {
 /// Whether `task` has a claim on this line, which stands `banner` down. Gates the label branch
 /// rather than one predicate, so no label form added later can opt out of it. A marker at a word
 /// boundary, not the whole line: a decorated marker carries content and `banner` autofixes.
+///
+/// **Case-sensitive, because `task` is.** Asking the broader question loses the finding rather than
+/// moving it: `// --- Hack ---` matched a lowercased `hack`, so `banner` stood down for a claim
+/// `task` never made — it scans for the uppercase markers — and `detached` cannot reach an
+/// `AttachedLeading` block, so nothing reported it at all.
 fn claimed_by_task(line: &str) -> bool {
-    let lower = line.to_lowercase();
     TASK_MARKERS
         .iter()
-        .any(|m| contains_at_word_boundary(&lower, &m.to_lowercase()))
+        .any(|m| contains_at_word_boundary(line, m))
 }
 
 /// A label fenced on **both** sides — `--- helpers ---`, `=== Setup ===`. Case is not the signal:
@@ -397,6 +401,25 @@ mod tests {
             "two characters is not a rule"
         );
         assert!(banner_reason(" Step by step", true).is_none());
+    }
+
+    /// `banner` stands down only for a claim `task` actually makes, which is a case-sensitive one.
+    ///
+    /// Asking the broader question lost the finding rather than moving it: a lowercased match stood
+    /// `banner` down on `--- Hack ---` while `task` scanned for `HACK` and stayed silent, and
+    /// `detached` cannot reach an `AttachedLeading` block. Nothing reported it.
+    #[test]
+    fn banner_stands_down_only_where_task_really_claims() {
+        assert!(
+            banner_reason(" --- HACK ---", true).is_none(),
+            "task has the claim on an uppercase marker"
+        );
+        assert!(
+            banner_reason(" --- Hack ---", true).is_some(),
+            "task is case-sensitive, so a mixed-case marker is banner's or nobody's"
+        );
+        assert!(banner_reason(" --- Todo ---", true).is_some());
+        assert!(banner_reason(" --- Hack workarounds ---", true).is_some());
     }
 
     #[test]

@@ -62,6 +62,12 @@ Two independent axes. **Tier** decides exit status: any unsuppressed `gate` find
 **Autofix** decides whether `laconic fix` touches the finding. A rule can gate without being
 autofixed, and most do.
 
+**The Tier column is the disposition for a line or block comment.** Dispositions are per comment
+kind, and two rules differ on a doc comment: `narration` and `banner` warn there rather than gate,
+so `/// Changed to use a map.` above a Rust function reports `warn` and the run exits 0. `laconic
+defaults` prints all three kinds per rule, and is generated from the registry rather than written
+by hand.
+
 | Rule | Tier | What it reports |
 |---|---|---|
 | `narration` | gate | the comment narrates the edit rather than the code |

@@ -163,15 +163,19 @@ impl Pack for TypeScriptPack {
         visibility_from_export(subject)
     }
 
-    /// Concern 9. The allowlist is what keeps this from counting the named children of a body that
-    /// holds no members: a `switch_statement` names a `switch_body`, and the statement forms name a
-    /// bare `statement`, neither of which a comment documents. Both reach here, because
-    /// `descendants_of_kind` walks the whole tree and a member of [`DECLARATIONS`] can nest inside
-    /// either.
+    /// Concern 9. The allowlist rejects nothing this pack can currently reach, and is a guard on
+    /// [`DECLARATIONS`] growing rather than a filter doing work today.
     ///
-    /// It is not what excludes a type alias or an arrow function, which the previous wording
-    /// claimed: `type_alias_declaration` names no `body` field at all — its value is a `value` —
-    /// and `arrow_function` is not in [`DECLARATIONS`], so neither ever reaches this match.
+    /// `member_count` is only ever called on a subject, and this pack's subjects are
+    /// `descendants_of_kind(root, DECLARATIONS)` — so every node reaching this match is a
+    /// [`DECLARATIONS`] entry, each of which either names no `body` field (`type_alias_declaration`
+    /// and `public_field_definition` name a `value`) or names one already in
+    /// [`MEMBER_CONTAINERS`]. A `switch_statement` never arrives: it is not a declaration, and a
+    /// declaration nested inside one is itself the subject, whose `body` is its own rather than the
+    /// switch's.
+    ///
+    /// So an entry added to [`DECLARATIONS`] whose body holds statements rather than members
+    /// counts nothing instead of counting rows, which is the failure this arm exists to prevent.
     fn member_count(&self, subject: Node, _src: &str) -> usize {
         match subject.child_by_field_name("body") {
             Some(body) if MEMBER_CONTAINERS.contains(&body.kind()) => count_members(body, &[]),
