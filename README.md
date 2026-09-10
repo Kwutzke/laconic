@@ -50,7 +50,7 @@ indented `instruction` line, and sometimes an indented `note` line after it. The
 so an agent applies a deletion without re-deriving the range from the instruction text.
 
 **The `note` line is read, not executed.** `density` and `docbloat` attach one where a subject is
-well past its threshold, to say that most code needs no comment at all, and that one which still
+well past the threshold that bound it, to say that most code needs no comment at all, and that one which still
 looks necessary after the repair is usually naming or structure asking to be fixed. It is
 deliberately not part of the instruction: told to restructure, the cheapest path to a clean run is
 to add code, which grows the denominator and leaves every comment in place. Repair the comment;
@@ -97,6 +97,14 @@ grants a long subject a proportional budget and nothing needs one: at one commen
 switch and logger setup. The square root grants that function 15 and a four-line one 2, so it is
 looser than a flat ratio on short subjects, where a single *why* is usually right, and stricter on
 long ones, where dilution hides things.
+
+**A subject is a declaration, and a file is not one.** `density` measures the functions, types and
+other declarations a pack names, never the file containing them. A file's commentary is the sum of
+what its declarations carry plus whatever sits between them, so it grows with the file while the
+budget grows with the square root of it — measuring one would report every long file, against a span
+covering the whole file that names nothing to repair. A file-level doc comment is still measured:
+a Rust `//!` or a Python module docstring documents something, so `docbloat` holds it to
+`absolute_doc_lines` like any other doc comment.
 
 ## Languages
 
