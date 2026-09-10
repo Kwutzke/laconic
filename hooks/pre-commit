@@ -49,7 +49,12 @@ set -- "$@" .
 output=$(cd "$staging" && "$laconic" "$@") && status=0 || status=$?
 
 if [ "$status" -eq 0 ]; then
-  printf '%s' "$output"
+  # Terminated, but only when there is something to terminate: command substitution strips the
+  # trailing newline, so an unterminated block runs into git's own commit line, and an
+  # unconditional one prints a blank line on the clean run that is the common case.
+  if [ -n "$output" ]; then
+    printf '%s\n' "$output"
+  fi
   exit 0
 fi
 
