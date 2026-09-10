@@ -62,11 +62,15 @@ Two independent axes. **Tier** decides exit status: any unsuppressed `gate` find
 **Autofix** decides whether `laconic fix` touches the finding. A rule can gate without being
 autofixed, and most do.
 
-**The Tier column is the disposition for a line or block comment.** Dispositions are per comment
-kind, and two rules differ on a doc comment: `narration` and `banner` warn there rather than gate,
-so `/// Changed to use a map.` above a Rust function reports `warn` and the run exits 0. `laconic
-defaults` prints all three kinds per rule, and is generated from the registry rather than written
-by hand.
+**The Tier column is the tier a rule reports at wherever it fires**, and dispositions are per
+comment kind, so the column does not say *which* kinds a rule fires on. Seven of the fifteen are
+silent on some kind — `docbloat` and `implInInterface` fire on doc comments only, and `restate`,
+`commentedOutCode`, `attribution`, `detached` and `density` never fire on one. Two rules also change
+tier by kind: `narration` and `banner` gate a line or block comment and warn on a doc comment, so
+`/// Changed to use a map.` above a Rust function reports `warn` and the run exits 0.
+
+`laconic defaults` prints all three kinds per rule and is generated from the registry, so it is the
+answer when this table and the tool disagree.
 
 | Rule | Tier | What it reports |
 |---|---|---|
