@@ -17,12 +17,6 @@ use tree_sitter::{Language, Node, Parser};
 fn lists() -> Vec<(&'static str, &'static str, &'static [&'static str])> {
     vec![
         ("go", "COMMENT_KINDS", go::COMMENT_KINDS),
-        ("go", "DOCUMENTABLE_ANYWHERE", go::DOCUMENTABLE_ANYWHERE),
-        (
-            "go",
-            "DOCUMENTABLE_AT_FILE_SCOPE",
-            go::DOCUMENTABLE_AT_FILE_SCOPE,
-        ),
         ("python", "COMMENT_KINDS", python::COMMENT_KINDS),
         ("python", "SCOPES", python::SCOPES),
         ("rust", "COMMENT_KINDS", rust::COMMENT_KINDS),
@@ -133,6 +127,7 @@ fn every_member_container_is_reachable_as_a_body_field() {
 /// Every pack's container table. Hand-enumerated like [`lists`], with the same gap.
 fn tables() -> Vec<(&'static str, &'static [Container])> {
     vec![
+        ("go", go::CONTAINERS),
         ("java", java::CONTAINERS),
         ("typescript", typescript::CONTAINERS),
     ]
