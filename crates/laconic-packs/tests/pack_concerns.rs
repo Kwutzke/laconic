@@ -245,6 +245,24 @@ fn rust_enum_variants_inherit_the_enums_visibility() {
     );
 }
 
+/// A trait member carries no `pub`. Read as private, a public trait's method names became words a
+/// doc comment could not use without `implInInterface` firing.
+#[test]
+fn rust_trait_members_inherit_the_traits_visibility() {
+    let src = "pub trait Store {\n    fn load(&self);\n    type Key;\n}\n\ntrait Hidden {\n    fn peek(&self);\n}\n";
+    let a = analyse_str("x.rs", src);
+    let vis = |n: &str| {
+        a.declared
+            .iter()
+            .find(|d| d.name == n)
+            .map(|d| d.visibility.clone())
+            .unwrap_or_else(|| panic!("{n} not declared; got {:?}", a.declared))
+    };
+    assert_eq!(vis("load"), Visibility::Exported);
+    assert_eq!(vis("Key"), Visibility::Exported);
+    assert_eq!(vis("peek"), Visibility::Private);
+}
+
 /// A Rust doc comment is attached to the item below it. The grammar's `doc` child carries the
 /// trailing newline, so the comment node's own end row is one past its text — read directly, every
 /// Rust doc comment resolves as Detached.
