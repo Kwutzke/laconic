@@ -6,7 +6,7 @@
 //! written by hand so it cannot assert the list against itself.
 
 use crate::common::Container;
-use crate::{go, java, python, rust, typescript};
+use crate::{go, java, python, rust, swift, typescript};
 use laconic_grammars::Grammar;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -21,6 +21,7 @@ fn lists() -> Vec<(&'static str, &'static str, &'static [&'static str])> {
         ("rust", "COMMENT_KINDS", rust::COMMENT_KINDS),
         ("rust", "NON_STATEMENTS", rust::NON_STATEMENTS),
         ("java", "COMMENT_KINDS", java::COMMENT_KINDS),
+        ("swift", "COMMENT_KINDS", swift::COMMENT_KINDS),
         ("typescript", "COMMENT_KINDS", typescript::COMMENT_KINDS),
         (
             "typescript",
@@ -129,6 +130,7 @@ fn tables() -> Vec<(&'static str, &'static [Container])> {
         ("java", java::CONTAINERS),
         ("python", python::CONTAINERS),
         ("rust", rust::CONTAINERS),
+        ("swift", swift::CONTAINERS),
         ("typescript", typescript::CONTAINERS),
     ]
 }

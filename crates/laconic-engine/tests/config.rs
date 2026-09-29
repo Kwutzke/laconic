@@ -8,7 +8,7 @@ use laconic_engine::config::{ConfigError, ConfigFile, Thresholds, discover};
 use laconic_engine::registry::Tier;
 use std::path::Path;
 
-const LANGUAGES: &[&str] = &["go", "python", "rust", "java", "typescript"];
+const LANGUAGES: &[&str] = &["go", "python", "rust", "java", "typescript", "swift"];
 
 fn parse(text: &str) -> ConfigFile {
     toml::from_str(text).expect("parses")

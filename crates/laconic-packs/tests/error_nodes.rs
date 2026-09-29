@@ -10,8 +10,12 @@ use laconic_packs::all;
 use std::path::Path;
 
 fn report_for(src: &str) -> Report {
+    report_for_file("broken.go", src)
+}
+
+fn report_for_file(name: &str, src: &str) -> Report {
     let packs = all();
-    let path = Path::new("broken.go");
+    let path = Path::new(name);
     let (pack, grammar) = resolve(&packs, path).unwrap();
     let analysis =
         analyse(pack, grammar, path, src, &Config::unrestricted()).expect("processed, not skipped");
@@ -164,4 +168,26 @@ fn a_parse_failure_alone_does_not_gate() {
             .all(|f| f.tier != laconic_engine::Tier::Gate)
     );
     assert_eq!(report.exit_code(), laconic_engine::EXIT_CLEAN);
+}
+
+/// tree-sitter-swift 0.7.3 cannot parse `if let r = try? await f()` (upstream #611), a line an
+/// async Swift client writes constantly. The comment restating the call above it must not reach
+/// `restate`, whose subject resolution the ERROR node makes unreliable.
+#[test]
+fn a_swift_grammar_gap_withholds_the_structural_rules() {
+    let src = "\
+public func load() async {
+    // load the items
+    if let r = try? await fetch() {
+        print(r)
+    }
+}
+";
+    let report = report_for_file("broken.swift", src);
+    assert!(
+        withheld(&report).contains(&"restate"),
+        "the pinned grammar still fails on this line: {:?}",
+        report.withheld
+    );
+    assert!(!fired(&report, "restate"));
 }

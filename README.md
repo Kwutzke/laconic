@@ -127,6 +127,7 @@ Adding a language is adding a pack, not touching the engine.
 | Python | `.py` `.pyi` |
 | Java | `.java` |
 | TypeScript / JavaScript | `.ts` `.mts` `.cts` `.tsx` `.js` `.mjs` `.cjs` `.jsx` |
+| Swift | `.swift` |
 
 An extension no pack claims produces no output and is not an error — laconic runs over whole
 repositories, and a line per `.json` would make the findings unreadable.

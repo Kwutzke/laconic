@@ -7,6 +7,7 @@ mod grammar_conformance;
 pub mod java;
 pub mod python;
 pub mod rust;
+pub mod swift;
 pub mod typescript;
 
 use laconic_engine::pack::Pack;
@@ -20,5 +21,6 @@ pub fn all() -> Vec<Box<dyn Pack>> {
         Box::new(rust::RustPack),
         Box::new(java::JavaPack),
         Box::new(typescript::TypeScriptPack),
+        Box::new(swift::SwiftPack),
     ]
 }

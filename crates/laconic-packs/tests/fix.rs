@@ -154,6 +154,47 @@ fn a_doc_comment_on_a_once_missing_declaration_survives_fix() {
     }
 }
 
+/// A Swift doc comment is marker text above any member kind, and `narration` never deletes one.
+#[test]
+fn a_swift_doc_comment_survives_fix_on_every_member_kind() {
+    let src = "\
+public extension Array {
+    /// Updated to skip the first element.
+    func rest() -> ArraySlice<Element> { dropFirst() }
+}
+
+public protocol Source {
+    /// Changed to be async.
+    func poll() async
+}
+
+public enum Mode {
+    /// Updated to mean \"retry once\".
+    case retry
+}
+";
+    assert_eq!(fixed("x.swift", src), src);
+}
+
+/// A narration comment in a Swift body is deleted, and what remains still parses.
+#[test]
+fn fixing_swift_leaves_a_file_that_parses() {
+    let src = "\
+public func load() -> Int {
+    // changed to use a map
+    let x = 1
+    return x
+}
+";
+    let once = fixed("x.swift", src);
+    assert!(!once.contains("changed to use"), "{once}");
+    let tree = laconic_grammars::Grammar::Swift
+        .parser()
+        .parse(&once, None)
+        .expect("parses");
+    assert!(!tree.root_node().has_error(), "{once}");
+}
+
 /// Code **after** a block comment on its line survives the fix.
 ///
 /// The whole-line branch had one guard, for code *before* the comment, so

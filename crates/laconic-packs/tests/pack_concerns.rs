@@ -45,7 +45,7 @@ fn block_with<'a>(a: &'a FileAnalysis, needle: &str) -> &'a laconic_engine::Comm
         })
 }
 
-/// Concern 1 — every extension the five packs claim resolves, and to the right grammar. TS/JS is
+/// Concern 1 — every extension the packs claim resolves, and to the right grammar. TS/JS is
 /// three grammars behind one pack, which is the whole reason resolution is per extension.
 #[test]
 fn every_claimed_extension_resolves() {
@@ -64,6 +64,7 @@ fn every_claimed_extension_resolves() {
         ("a.jsx", "typescript"),
         ("a.mts", "typescript"),
         ("a.cts", "typescript"),
+        ("a.swift", "swift"),
     ];
     for (file, pack_name) in expected {
         let (pack, _) = resolve(&packs, Path::new(file)).unwrap_or_else(|| panic!("{file}"));
@@ -406,4 +407,151 @@ fn a_typescript_type_counts_what_it_declares() {
     // A type alias names no `body` field at all, so it reaches the count through neither branch.
     let alias = "export type ID = string;\n";
     assert_eq!(members_of("x.ts", alias, "type ID"), 0);
+}
+
+/// Swift's doc comment is marker text on a node kind shared with `//` and `// MARK:`, so the marker
+/// test carries it — and `////` opens with the same characters and is a banner.
+#[test]
+fn swift_doc_comments_are_marker_text_on_every_member_kind() {
+    let src = "\
+/// Documents a function.
+public func f() {}
+
+////////
+
+public func g() {}
+
+public extension Array {
+    /// Documents an extension member.
+    func h() {}
+}
+
+public protocol Source {
+    /// Documents a requirement.
+    func poll()
+}
+
+public enum Mode {
+    /// Documents a case.
+    case retry
+}
+
+/**
+ * Documents a struct.
+ */
+public struct S {
+    func run() {
+        /// Not documentation: a statement follows.
+        print(1)
+    }
+}
+";
+    let a = analyse_str("x.swift", src);
+    for doc in [
+        "Documents a function",
+        "Documents an extension member",
+        "Documents a requirement",
+        "Documents a case",
+        "Documents a struct",
+    ] {
+        assert_eq!(block_with(&a, doc).kind, CommentKind::Doc, "{doc}");
+    }
+    assert_eq!(block_with(&a, "Not documentation").kind, CommentKind::Line);
+    let banner = a
+        .blocks
+        .iter()
+        .find(|b| src[b.span.clone()].starts_with("////////"))
+        .expect("the slash banner");
+    assert_eq!(banner.kind, CommentKind::Line);
+}
+
+/// A member with no modifier is as visible as Swift makes it, which depends on its container.
+#[test]
+fn swift_visibility_follows_the_container() {
+    let src = "\
+public extension Array {
+    func inPublicExtension() {}
+}
+
+extension Array {
+    func inPlainExtension() {}
+}
+
+public protocol Source {
+    func requirement()
+}
+
+public enum Mode {
+    case retry
+}
+
+public struct Row {
+    var unmarked = 0
+    public private(set) var settable = 0
+    open func overridable() {}
+}
+
+fileprivate struct Hidden {
+    var inPrivateType = 0
+}
+";
+    let a = analyse_str("x.swift", src);
+    let vis = |n: &str| {
+        a.declared
+            .iter()
+            .find(|d| d.name == n)
+            .map(|d| d.visibility.clone())
+            .unwrap_or_else(|| panic!("{n} not declared; got {:?}", a.declared))
+    };
+    let module = Visibility::Restricted("module".to_string());
+    assert_eq!(vis("inPublicExtension"), Visibility::Exported);
+    assert_eq!(vis("inPlainExtension"), module);
+    assert_eq!(vis("requirement"), Visibility::Exported);
+    assert_eq!(vis("retry"), Visibility::Exported);
+    assert_eq!(vis("unmarked"), module);
+    assert_eq!(
+        vis("settable"),
+        Visibility::Exported,
+        "`private(set)` restricts the setter"
+    );
+    assert_eq!(vis("overridable"), Visibility::Exported);
+    assert_eq!(vis("inPrivateType"), Visibility::Private);
+    assert!(
+        a.declared.iter().all(|d| d.name != "Array"),
+        "an extension declares no name of its own"
+    );
+}
+
+/// Most of a SwiftUI app's code is a computed `body` property, so it is measured like a function.
+#[test]
+fn a_swiftui_body_is_a_density_subject() {
+    let src = "\
+struct ContentView: View {
+    var body: some View {
+        // stack the rows
+        // one per item
+        // with padding
+        VStack {
+            Text(\"a\")
+        }
+        .padding()
+    }
+}
+";
+    // Located by line: the struct around `body` is a subject too and covers the same comments.
+    let packs = all();
+    let path = Path::new("x.swift");
+    let (pack, grammar) = resolve(&packs, path).expect("swift resolves");
+    let analysis = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let rules = Rules {
+        block: all_block_rules(),
+        subject: all_subject_rules(),
+    };
+    let (findings, _) = dispatch(path, src, &analysis, &Resolved::default(), &rules);
+    let density_lines: Vec<usize> = findings
+        .iter()
+        .filter(|f| f.rule == "density")
+        .map(|f| f.line)
+        .collect();
+    assert!(density_lines.contains(&2), "{density_lines:?}");
 }
