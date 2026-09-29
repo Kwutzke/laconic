@@ -26,6 +26,7 @@ fn comment_kinds(g: Grammar) -> &'static [&'static str] {
         Grammar::Go | Grammar::Python => &["comment"],
         Grammar::Rust | Grammar::Java => &["line_comment", "block_comment"],
         Grammar::TypeScript | Grammar::Tsx | Grammar::JavaScript => &["comment", "html_comment"],
+        Grammar::Swift => &["comment", "multiline_comment"],
     }
 }
 
@@ -121,8 +122,10 @@ fn comment_node_kinds_are_grammar_truth() {
         (Grammar::TypeScript, &["comment", "html_comment"]),
         (Grammar::Tsx, &["comment", "html_comment"]),
         (Grammar::JavaScript, &["comment", "html_comment"]),
+        (Grammar::Swift, &["comment", "multiline_comment"]),
     ];
 
+    assert_eq!(expected.len(), Grammar::ALL.len(), "a grammar is missing");
     for (g, kinds) in expected {
         let declared: BTreeSet<&str> = g
             .named_node_kinds()
@@ -196,7 +199,7 @@ fn pinned_grammars_span_two_abi_versions() {
 /// stated, where a hand-written list would leave it unasserted and the suite green.
 fn expected_abi(g: Grammar) -> usize {
     match g {
-        Grammar::Go | Grammar::Python | Grammar::Rust | Grammar::JavaScript => 15,
+        Grammar::Go | Grammar::Python | Grammar::Rust | Grammar::JavaScript | Grammar::Swift => 15,
         Grammar::Java | Grammar::TypeScript | Grammar::Tsx => 14,
     }
 }
@@ -296,6 +299,14 @@ fn expected_kinds(g: Grammar) -> &'static [(&'static str, Kind)] {
             ("/* a block comment */", Kind::Block),
             ("<!-- an html comment -->", Kind::Line),
             ("/** Documents an exported function. */", Kind::Block),
+        ],
+        // `///` and `// MARK:` are the same `comment` node as `//`.
+        Grammar::Swift => &[
+            ("// a line comment", Kind::Line),
+            ("/* a block comment */", Kind::Block),
+            ("// MARK: - Probe", Kind::Line),
+            ("/// Documents an exported function.", Kind::Line),
+            ("/**\n * Documents an exported struct.", Kind::Block),
         ],
     }
 }
@@ -662,6 +673,7 @@ fn statement_case(g: Grammar) -> Option<(&'static str, &'static str, &'static st
         Grammar::TypeScript => Some(("function_declaration", "exported", "statement_block", 3)),
         Grammar::Tsx => Some(("function_declaration", "Component", "statement_block", 3)),
         Grammar::JavaScript => Some(("function_declaration", "exported", "statement_block", 3)),
+        Grammar::Swift => Some(("function_declaration", "exported", "statements", 3)),
         Grammar::Python => None,
     }
 }
