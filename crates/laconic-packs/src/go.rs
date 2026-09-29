@@ -55,6 +55,7 @@ const STATEMENTS: &[&str] = &[
 pub(crate) const CONTAINERS: &[Container] = &[
     Container {
         kind: "source_file",
+        within: &[],
         // `// Package x ...` is the package doc comment, the first thing pkg.go.dev shows.
         declarations: &[
             "package_clause",
@@ -78,6 +79,7 @@ pub(crate) const CONTAINERS: &[Container] = &[
     },
     Container {
         kind: "statement_list",
+        within: &[],
         declarations: &[],
         wrappers: &[],
         excluded: &[
@@ -95,24 +97,28 @@ pub(crate) const CONTAINERS: &[Container] = &[
     // godoc surface of its own.
     Container {
         kind: "const_declaration",
+        within: &[],
         declarations: &["const_spec"],
         wrappers: &[],
         excluded: &[],
     },
     Container {
         kind: "var_declaration",
+        within: &[],
         declarations: &["var_spec"],
         wrappers: &["var_spec_list"],
         excluded: &[],
     },
     Container {
         kind: "var_spec_list",
+        within: &[],
         declarations: &["var_spec"],
         wrappers: &[],
         excluded: &[],
     },
     Container {
         kind: "type_declaration",
+        within: &[],
         declarations: &[],
         wrappers: &[],
         excluded: &[Excluded {
@@ -123,17 +129,28 @@ pub(crate) const CONTAINERS: &[Container] = &[
     },
     Container {
         kind: "field_declaration_list",
+        within: &[],
         declarations: &["field_declaration"],
         wrappers: &[],
         excluded: &[],
     },
-    // `type_elem` is an embedded interface or a type set. The grammar also puts one under
-    // `type_arguments`, which is not a container here, so a generic type argument is no subject.
+    // `type_elem` is an embedded interface or a type set.
     Container {
         kind: "interface_type",
+        within: &[],
         declarations: &["method_elem", "type_elem"],
         wrappers: &[],
         excluded: &[],
+    },
+    Container {
+        kind: "type_arguments",
+        within: &[],
+        declarations: &[],
+        wrappers: &[],
+        excluded: &[Excluded {
+            reason: "a generic type argument, which the grammar also calls `type_elem`",
+            kinds: &["type_elem"],
+        }],
     },
 ];
 

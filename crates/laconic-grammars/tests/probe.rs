@@ -99,7 +99,7 @@ fn statement_count(g: Grammar, kind: &str, name: &str, container_kind: &str) -> 
 }
 
 /// Concern 2 — which node types carry comments, read off the grammar rather than off a fixture.
-/// There is no type common to all seven grammars, which is why this cannot be an engine constant.
+/// There is no type common to every grammar, which is why this cannot be an engine constant.
 #[test]
 fn comment_node_kinds_are_grammar_truth() {
     // Every named kind whose name contains "comment", and which of them a pack extracts. The two

@@ -1,9 +1,9 @@
-//! Every node kind a pack names, checked against the grammar it names it for.
+//! The node kinds packs name in their lists and container tables, checked against the grammars they
+//! claim. Kinds a pack names only inside its code are not covered.
 //!
-//! Nothing read the pinned grammars these hand-written lists describe, so a list was an assertion
-//! no test could fail. Each kind must resolve in a grammar its pack claims, and each
-//! `MEMBER_CONTAINERS` entry must be reachable as some node's `body` field, shown by a probe
-//! written by hand so it cannot assert the list against itself.
+//! Each listed kind must resolve in a grammar its pack claims; each `MEMBER_CONTAINERS` entry must be
+//! reachable as some node's `body` field, shown by a probe written by hand so it cannot assert the
+//! list against itself; and each container table must classify every child its container can hold.
 
 use crate::common::Container;
 use crate::{go, java, python, rust, swift, typescript};
@@ -183,7 +183,16 @@ fn every_child_of_a_container_is_classified_exactly_once() {
             .iter()
             .map(|(_, g)| *g)
             .collect();
-        for container in table {
+        for (i, container) in table.iter().enumerate() {
+            if table[..i]
+                .iter()
+                .any(|c| c.kind == container.kind && c.within == container.within)
+            {
+                problems.push(format!(
+                    "{pack_name}: {} is listed twice under the same parents",
+                    container.kind
+                ));
+            }
             let classified: Vec<&str> = container
                 .declarations
                 .iter()

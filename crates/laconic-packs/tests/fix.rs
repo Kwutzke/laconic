@@ -154,6 +154,42 @@ fn a_doc_comment_on_a_once_missing_declaration_survives_fix() {
     }
 }
 
+/// Doc comments whose declaration sits under a parent the pack's table does not name, or under a
+/// chain of `export` and `declare` wrappers. Each was Block kind, and `narration` deleted it.
+#[test]
+fn a_doc_comment_under_an_unlisted_or_wrapped_parent_survives_fix() {
+    let cases = [
+        // tree-sitter recovers this by putting the method under an ERROR node.
+        (
+            "x.ts",
+            "export class A {\n  a(: {\n  /** Updated to handle nulls. */\n  m(): void {}\n}\n",
+        ),
+        (
+            "x.java",
+            "class A {\n    void f(int k) {\n        switch (k) {\n            case 1:\n                /** Updated to retry once. */\n                class L {}\n                break;\n        }\n    }\n}\n",
+        ),
+        (
+            "x.ts",
+            "export default {\n  /** Changed to load lazily. */\n  load() {},\n};\n",
+        ),
+        (
+            "x.ts",
+            "/** Updated to accept a Map. */\nexport declare function lookup(k: string): void;\n",
+        ),
+        (
+            "x.ts",
+            "/** Changed at build time. */\ndeclare const VERSION: string;\n",
+        ),
+        (
+            "x.ts",
+            "declare global {\n  /** Changed to a boolean. */\n  var __DEV__: boolean;\n}\nexport {};\n",
+        ),
+    ];
+    for (name, src) in cases {
+        assert_eq!(fixed(name, src), src, "{name}: fix removed a doc comment");
+    }
+}
+
 /// A Swift doc comment is marker text above any member kind, and `narration` never deletes one.
 #[test]
 fn a_swift_doc_comment_survives_fix_on_every_member_kind() {

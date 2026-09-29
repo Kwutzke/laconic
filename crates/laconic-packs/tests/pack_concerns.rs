@@ -409,6 +409,97 @@ fn a_typescript_type_counts_what_it_declares() {
     assert_eq!(members_of("x.ts", alias, "type ID"), 0);
 }
 
+fn subject_texts<'a>(a: &FileAnalysis, src: &'a str) -> Vec<&'a str> {
+    a.subjects.iter().map(|s| &src[s.span.clone()]).collect()
+}
+
+fn declared_visibility(a: &FileAnalysis, name: &str) -> Option<Visibility> {
+    a.declared
+        .iter()
+        .find(|d| d.name == name)
+        .map(|d| d.visibility.clone())
+}
+
+/// A local declaration stays local whatever wraps it: a label in Go, a function body in TS. A
+/// generic type argument is not an interface element, though the Go grammar names it the same.
+#[test]
+fn a_local_declaration_is_not_a_subject_under_any_parent() {
+    let go = "package p\n\nfunc run() {\nL:\n\tvar handlers = map[string]int{}\n\t_ = handlers\n\tgoto L\n}\n\ntype X = List[int]\n";
+    let a = analyse_str("x.go", go);
+    let subjects = subject_texts(&a, go);
+    assert!(
+        !subjects.iter().any(|s| s.starts_with("handlers")),
+        "{subjects:?}"
+    );
+    assert!(!subjects.contains(&"int"), "{subjects:?}");
+
+    let ts = "namespace N {\n  const x = 1;\n}\n\nfunction f() {\n  const y = 2;\n}\n";
+    let a = analyse_str("x.ts", ts);
+    let subjects = subject_texts(&a, ts);
+    assert!(
+        subjects.contains(&"const x = 1;"),
+        "a namespace member: {subjects:?}"
+    );
+    assert!(!subjects.contains(&"const y = 2;"), "a local: {subjects:?}");
+}
+
+/// Outside package-info.java the comment above `package` is a licence header, and the engine drops
+/// a licence header only while it is not documentation.
+#[test]
+fn a_java_licence_header_above_package_draws_nothing() {
+    let src = "/**\n * Copyright 2026 Example\n * Licensed under the Apache License 2.0\n * you may not use this file except\n * in compliance with the License.\n * See the LICENSE file.\n * All rights reserved.\n */\npackage com.example;\n\npublic class A {}\n";
+    assert_eq!(rules_fired("x.java", src), Vec::<&str>::new());
+}
+
+/// A declared name is a name the declaration binds, and it is as visible as its declaration.
+#[test]
+fn declared_names_are_bound_names_at_their_owners_visibility() {
+    let ts = "export declare function helper(): void;\nexport type Options = { maxAttempts: number };\nexport interface Registry { [entryName: string]: unknown }\n";
+    let a = analyse_str("x.ts", ts);
+    assert_eq!(
+        declared_visibility(&a, "helper"),
+        Some(Visibility::Exported)
+    );
+    assert_eq!(
+        declared_visibility(&a, "maxAttempts"),
+        Some(Visibility::Exported),
+        "{:?}",
+        a.declared
+    );
+    assert_eq!(
+        declared_visibility(&a, "entryName"),
+        None,
+        "an index key names no member"
+    );
+
+    let swift = "func make() -> JSONDecoder { JSONDecoder() }\n\npublic macro stringify(_ v: Int) = #externalMacro(module: \"M\", type: \"T\")\n\nprivate func outer() {\n    func inner() {}\n}\n";
+    let a = analyse_str("x.swift", swift);
+    assert!(declared_visibility(&a, "make").is_some());
+    assert_eq!(
+        declared_visibility(&a, "JSONDecoder"),
+        None,
+        "a return type is not declared"
+    );
+    assert_eq!(
+        declared_visibility(&a, "stringify"),
+        Some(Visibility::Exported)
+    );
+    assert_eq!(declared_visibility(&a, "inner"), Some(Visibility::Private));
+}
+
+/// A Swift type body carries `#if` directives as named children, and they are not members.
+#[test]
+fn a_swift_directive_is_not_a_member() {
+    let src = "public struct S {\n#if DEBUG\n    var a = 1\n#endif\n}\n";
+    let a = analyse_str("x.swift", src);
+    let s = a
+        .subjects
+        .iter()
+        .find(|s| src[s.span.clone()].starts_with("public struct S"))
+        .expect("the struct");
+    assert_eq!(s.member_count, 1);
+}
+
 /// Swift's doc comment is marker text on a node kind shared with `//` and `// MARK:`, so the marker
 /// test carries it — and `////` opens with the same characters and is a banner.
 #[test]

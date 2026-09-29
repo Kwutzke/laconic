@@ -102,13 +102,12 @@ const INITIALIZERS: Excluded = Excluded {
     kinds: &["static_initializer"],
 };
 
-/// A method's block is a container because a local class is documented like any other. One in a
-/// `switch` group or a brace-less loop body is not reached; javadoc renders no local type, so that
-/// loses nothing published.
+/// A method's block is a container because a local class is documented like any other.
 pub(crate) const CONTAINERS: &[Container] = &[
     Container {
         kind: "program",
-        // A `package` or `module` declaration's javadoc is the package or module page itself.
+        within: &[],
+        // A `module` declaration's javadoc is the module page itself.
         declarations: &[
             "class_declaration",
             "interface_declaration",
@@ -116,32 +115,44 @@ pub(crate) const CONTAINERS: &[Container] = &[
             "record_declaration",
             "annotation_type_declaration",
             "method_declaration",
-            "package_declaration",
             "module_declaration",
         ],
         wrappers: &["block"],
-        excluded: &[STATEMENTS, LOCALS, IMPORTS],
+        excluded: &[
+            STATEMENTS,
+            LOCALS,
+            IMPORTS,
+            Excluded {
+                reason: "the comment above `package` is javadoc only in package-info.java and a \
+                         licence header everywhere else, and a pack cannot see the file name",
+                kinds: &["package_declaration"],
+            },
+        ],
     },
     Container {
         kind: "class_body",
+        within: &[],
         declarations: MEMBERS,
         wrappers: &["block"],
         excluded: &[INITIALIZERS],
     },
     Container {
         kind: "enum_body_declarations",
+        within: &[],
         declarations: MEMBERS,
         wrappers: &["block"],
         excluded: &[INITIALIZERS],
     },
     Container {
         kind: "enum_body",
+        within: &[],
         declarations: &["enum_constant"],
         wrappers: &["enum_body_declarations"],
         excluded: &[],
     },
     Container {
         kind: "interface_body",
+        within: &[],
         declarations: &[
             "class_declaration",
             "interface_declaration",
@@ -156,6 +167,7 @@ pub(crate) const CONTAINERS: &[Container] = &[
     },
     Container {
         kind: "annotation_type_body",
+        within: &[],
         declarations: &[
             "class_declaration",
             "interface_declaration",
@@ -169,12 +181,14 @@ pub(crate) const CONTAINERS: &[Container] = &[
     },
     Container {
         kind: "block",
+        within: &[],
         declarations: TYPES,
         wrappers: &["block"],
         excluded: &[STATEMENTS, LOCALS, HEADERS_IN_A_BLOCK],
     },
     Container {
         kind: "constructor_body",
+        within: &[],
         declarations: TYPES,
         wrappers: &["block"],
         excluded: &[
@@ -248,8 +262,8 @@ impl Pack for JavaPack {
     /// reachable from other files in the package and so `Restricted`, not `Private`.
     ///
     /// An enum constant takes its enum's visibility, and an unmarked interface or annotation member
-    /// is implicitly public, so it is as visible as the type declaring it. A package or module
-    /// declaration is the published page itself.
+    /// is implicitly public, so it is as visible as the type declaring it. A module declaration is
+    /// the published page itself.
     fn visibility(&self, subject: Node, _src: &str) -> Visibility {
         java_visibility(subject)
     }
@@ -291,7 +305,7 @@ impl Pack for JavaPack {
 }
 
 fn java_visibility(subject: Node) -> Visibility {
-    if matches!(subject.kind(), "package_declaration" | "module_declaration") {
+    if subject.kind() == "module_declaration" {
         return Visibility::Exported;
     }
     if subject.kind() == "enum_constant" {

@@ -98,6 +98,7 @@ const MACRO_CALLS: Excluded = Excluded {
 pub(crate) const CONTAINERS: &[Container] = &[
     Container {
         kind: "source_file",
+        within: &[],
         declarations: ITEMS,
         wrappers: &[],
         excluded: &[
@@ -124,6 +125,7 @@ pub(crate) const CONTAINERS: &[Container] = &[
     // The body of a `mod`, an `impl`, a `trait` and an `extern` block alike.
     Container {
         kind: "declaration_list",
+        within: &[],
         declarations: TRAIT_OR_IMPL_ITEMS,
         wrappers: &[],
         excluded: &[
@@ -140,6 +142,7 @@ pub(crate) const CONTAINERS: &[Container] = &[
     // An item nested in a function body is documented like any other.
     Container {
         kind: "block",
+        within: &[],
         declarations: ITEMS,
         wrappers: &[],
         excluded: &[
@@ -208,12 +211,14 @@ pub(crate) const CONTAINERS: &[Container] = &[
     },
     Container {
         kind: "field_declaration_list",
+        within: &[],
         declarations: &["field_declaration"],
         wrappers: &[],
         excluded: &[OUTER_ATTRIBUTES],
     },
     Container {
         kind: "enum_variant_list",
+        within: &[],
         declarations: &["enum_variant"],
         wrappers: &[],
         excluded: &[OUTER_ATTRIBUTES],

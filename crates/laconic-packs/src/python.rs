@@ -65,17 +65,19 @@ const IMPORTS: Excluded = Excluded {
     ],
 };
 
-/// Scopes that can carry a docstring. The module root is one too and has no parent, so it is
-/// handled separately.
+/// Where a function or class definition can sit. Each definition's body can carry a docstring; the
+/// module's own docstring has no definition around it and is found separately.
 pub(crate) const CONTAINERS: &[Container] = &[
     Container {
         kind: "module",
+        within: &[],
         declarations: &["function_definition", "class_definition"],
         wrappers: &["decorated_definition"],
         excluded: &[STATEMENTS, IMPORTS],
     },
     Container {
         kind: "block",
+        within: &[],
         declarations: &["function_definition", "class_definition"],
         wrappers: &["decorated_definition"],
         excluded: &[
@@ -89,6 +91,7 @@ pub(crate) const CONTAINERS: &[Container] = &[
     },
     Container {
         kind: "decorated_definition",
+        within: &[],
         declarations: &["function_definition", "class_definition"],
         wrappers: &[],
         excluded: &[Excluded {

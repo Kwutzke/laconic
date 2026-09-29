@@ -186,7 +186,7 @@ public func load() async {
     let report = report_for_file("broken.swift", src);
     assert!(
         withheld(&report).contains(&"restate"),
-        "the pinned grammar still fails on this line: {:?}",
+        "restate is no longer withheld; if tree-sitter-swift now parses this line, drop this test: {:?}",
         report.withheld
     );
     assert!(!fired(&report, "restate"));

@@ -18,10 +18,10 @@ pub(crate) const COMMENT_KINDS: &[&str] = &["comment", "multiline_comment"];
 
 /// Concern 3. Bodies arrive with the marker stripped.
 ///
-/// `MARK:` builds Xcode's jump bar and SwiftLint checks its format, and it is exactly the shape
-/// `banner` deletes. `sourcery:inline` and `sourcery:end` bracket generated code, so removing one
-/// corrupts the next regeneration. `TODO:` and `FIXME:` are read by SwiftLint only to warn about
-/// them, and stay subject to the rules as in every other pack.
+/// `MARK:` is exactly the shape `banner` deletes, and Xcode's jump bar and SwiftLint both read it.
+/// `sourcery:inline` and `sourcery:end` bracket generated code, so removing one corrupts the next
+/// regeneration. `TODO:` and `FIXME:` reach the jump bar too, but stay subject to the rules as in
+/// every other pack: `task` exists to judge them.
 const MACHINE_DIRECTIVES: &[&str] = &[
     "MARK:",
     "swiftlint:",
@@ -143,6 +143,7 @@ const MISPLACED_IN_A_TYPE: Excluded = Excluded {
 pub(crate) const CONTAINERS: &[Container] = &[
     Container {
         kind: "source_file",
+        within: &[],
         declarations: &[
             "class_declaration",
             "protocol_declaration",
@@ -181,6 +182,7 @@ pub(crate) const CONTAINERS: &[Container] = &[
     },
     Container {
         kind: "class_body",
+        within: &[],
         declarations: MEMBERS,
         wrappers: &[],
         excluded: &[
@@ -194,6 +196,7 @@ pub(crate) const CONTAINERS: &[Container] = &[
     },
     Container {
         kind: "enum_class_body",
+        within: &[],
         declarations: &[
             "enum_entry",
             "class_declaration",
@@ -210,6 +213,7 @@ pub(crate) const CONTAINERS: &[Container] = &[
     },
     Container {
         kind: "protocol_body",
+        within: &[],
         declarations: &[
             "protocol_function_declaration",
             "protocol_property_declaration",
@@ -231,6 +235,7 @@ pub(crate) const CONTAINERS: &[Container] = &[
     // other; a `let` or `var` here is a local.
     Container {
         kind: "statements",
+        within: &[],
         declarations: &[
             "class_declaration",
             "function_declaration",
@@ -318,11 +323,14 @@ impl Pack for SwiftPack {
 
     /// Concern 8. A member with no modifier of its own is as visible as Swift makes it: a protocol
     /// requirement and an enum case take their owner's visibility, a member of a `public
-    /// extension` is public, and anything else is internal — never more visible than a private
-    /// owner.
+    /// extension` is public, a declaration in a function body is private, and a type member is
+    /// internal unless its type is private.
     fn visibility(&self, subject: Node, src: &str) -> Visibility {
         if let Some(own) = own_visibility(subject, src) {
             return own;
+        }
+        if subject.parent().is_some_and(|p| p.kind() == "statements") {
+            return Visibility::Private;
         }
         let Some(owner) = subject.parent().and_then(|body| body.parent()) else {
             return internal();
@@ -358,7 +366,11 @@ impl Pack for SwiftPack {
         let statements = body
             .named_children(&mut cursor)
             .find(|n| n.kind() == "statements");
-        count_members(statements.unwrap_or(body), &[])
+        // A type body carries `#if` directives and `/* */` separators as named children.
+        count_members(
+            statements.unwrap_or(body),
+            &["directive", "multiline_comment"],
+        )
     }
 
     fn statement_scaffold(&self) -> Option<(&'static str, &'static str)> {
@@ -391,22 +403,39 @@ impl Pack for SwiftPack {
                 _ => continue,
             };
             let visibility = self.visibility(decl, src);
-            let mut cursor = decl.walk();
-            for name in decl.children_by_field_name("name", &mut cursor) {
-                // A property's name is a pattern; the identifier it binds is inside.
-                let name = name.child_by_field_name("bound_identifier").unwrap_or(name);
+            for name in bound_names(decl) {
                 out.push(DeclaredSymbol {
                     name: src[name.byte_range()].to_string(),
                     form,
                     visibility: visibility.clone(),
                 });
-                // A typealias names its alias first and the aliased type second.
-                if form == "type" {
-                    break;
-                }
             }
         }
         out
+    }
+}
+
+/// The identifiers a declaration binds. The grammar's hidden type rule carries a `name` field, so a
+/// function's return type and a typealias's target arrive as `name` too; only the first is the
+/// declaration's own. A `case` and a property can bind several, and a macro's name has no field.
+fn bound_names(decl: Node) -> Vec<Node> {
+    let mut cursor = decl.walk();
+    let names: Vec<Node> = decl.children_by_field_name("name", &mut cursor).collect();
+    match decl.kind() {
+        "enum_entry" => names,
+        "property_declaration" | "protocol_property_declaration" => names
+            .into_iter()
+            .filter(|n| n.kind() == "pattern")
+            .map(|n| n.child_by_field_name("bound_identifier").unwrap_or(n))
+            .collect(),
+        "macro_declaration" => {
+            let mut cursor = decl.walk();
+            decl.named_children(&mut cursor)
+                .find(|n| n.kind() == "simple_identifier")
+                .into_iter()
+                .collect()
+        }
+        _ => names.into_iter().take(1).collect(),
     }
 }
 
