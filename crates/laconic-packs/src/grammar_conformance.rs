@@ -30,7 +30,6 @@ fn lists() -> Vec<(&'static str, &'static str, &'static [&'static str])> {
         ("rust", "NON_STATEMENTS", rust::NON_STATEMENTS),
         ("java", "COMMENT_KINDS", java::COMMENT_KINDS),
         ("typescript", "COMMENT_KINDS", typescript::COMMENT_KINDS),
-        ("typescript", "DECLARATIONS", typescript::DECLARATIONS),
         (
             "typescript",
             "MEMBER_CONTAINERS",
@@ -133,7 +132,10 @@ fn every_member_container_is_reachable_as_a_body_field() {
 
 /// Every pack's container table. Hand-enumerated like [`lists`], with the same gap.
 fn tables() -> Vec<(&'static str, &'static [Container])> {
-    vec![("java", java::CONTAINERS)]
+    vec![
+        ("java", java::CONTAINERS),
+        ("typescript", typescript::CONTAINERS),
+    ]
 }
 
 /// The named child kinds `node-types.json` allows under `container`, supertypes expanded to the
