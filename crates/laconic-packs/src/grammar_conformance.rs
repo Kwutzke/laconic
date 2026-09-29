@@ -18,7 +18,6 @@ fn lists() -> Vec<(&'static str, &'static str, &'static [&'static str])> {
     vec![
         ("go", "COMMENT_KINDS", go::COMMENT_KINDS),
         ("python", "COMMENT_KINDS", python::COMMENT_KINDS),
-        ("python", "SCOPES", python::SCOPES),
         ("rust", "COMMENT_KINDS", rust::COMMENT_KINDS),
         ("rust", "NON_STATEMENTS", rust::NON_STATEMENTS),
         ("java", "COMMENT_KINDS", java::COMMENT_KINDS),
@@ -128,6 +127,7 @@ fn tables() -> Vec<(&'static str, &'static [Container])> {
     vec![
         ("go", go::CONTAINERS),
         ("java", java::CONTAINERS),
+        ("python", python::CONTAINERS),
         ("rust", rust::CONTAINERS),
         ("typescript", typescript::CONTAINERS),
     ]
