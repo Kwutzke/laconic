@@ -59,6 +59,85 @@ fn strip_continuation_leader(line: &str) -> &str {
     }
 }
 
+/// What each child kind of one container is. `grammar_conformance` requires every child the grammar
+/// allows to be in exactly one list, so an unlisted declaration fails the build.
+pub struct Container {
+    pub kind: &'static str,
+    pub declarations: &'static [&'static str],
+    /// Not declarations themselves, but a declaration inside one still counts — `export`, a grouped
+    /// `var ( … )`, a decorator wrapper.
+    pub wrappers: &'static [&'static str],
+    /// Not declarations, and nothing inside one is either: a `const` in a function body makes its
+    /// specs locals.
+    pub excluded: &'static [Excluded],
+}
+
+pub struct Excluded {
+    pub reason: &'static str,
+    pub kinds: &'static [&'static str],
+}
+
+enum Role {
+    Declaration,
+    Wrapper,
+    Excluded,
+}
+
+fn role(table: &[Container], parent: &str, child: &str) -> Option<Role> {
+    let container = table.iter().find(|c| c.kind == parent)?;
+    if container.declarations.contains(&child) {
+        Some(Role::Declaration)
+    } else if container.wrappers.contains(&child) {
+        Some(Role::Wrapper)
+    } else if container.excluded.iter().any(|e| e.kinds.contains(&child)) {
+        Some(Role::Excluded)
+    } else {
+        None
+    }
+}
+
+/// Whether `node` is a declaration: its container lists it as one, and the chain of listed
+/// containers above it reaches either the root or an unlisted node without passing an excluded
+/// child. The walk stops at the first unlisted edge, so a class body inside an expression is judged
+/// by the class body alone.
+pub fn is_declaration(table: &[Container], node: Node) -> bool {
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    matches!(
+        role(table, parent.kind(), node.kind()),
+        Some(Role::Declaration)
+    ) && in_scope(table, parent)
+}
+
+fn in_scope(table: &[Container], node: Node) -> bool {
+    let Some(parent) = node.parent() else {
+        return true;
+    };
+    match role(table, parent.kind(), node.kind()) {
+        Some(Role::Declaration | Role::Wrapper) => in_scope(table, parent),
+        Some(Role::Excluded) => false,
+        None => true,
+    }
+}
+
+/// Every declaration under `root`, in document order.
+pub fn declarations<'t>(table: &[Container], root: Node<'t>) -> Vec<Node<'t>> {
+    let mut cursor = root.walk();
+    let mut stack = vec![root];
+    let mut out = Vec::new();
+    while let Some(n) = stack.pop() {
+        for child in n.named_children(&mut cursor) {
+            if is_declaration(table, child) {
+                out.push(child);
+            }
+            stack.push(child);
+        }
+    }
+    out.sort_by_key(|n| n.start_byte());
+    out
+}
+
 /// The named descendants of `root` matching any of `kinds`, in document order.
 pub fn descendants_of_kind<'t>(root: Node<'t>, kinds: &[&str]) -> Vec<Node<'t>> {
     let mut cursor = root.walk();

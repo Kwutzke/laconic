@@ -6,14 +6,14 @@
 use tree_sitter::Language;
 
 /// Declares the grammar set once, and derives the enum, [`Grammar::ALL`], the names, the language
-/// functions and the probe fixtures from that one list.
+/// functions, the node-type tables and the probe fixtures from that one list.
 ///
 /// A grammar added and never probed is the failure this crate exists to prevent, and the guard has
 /// to be structural: a hand-written `ALL` beside a hand-written `match` drifts silently, because
 /// adding a variant breaks the matches while leaving `ALL` compiling — and every `for g in ALL`
 /// test then skips the new grammar and still reports green.
 macro_rules! grammars {
-    ($($variant:ident => $name:literal, $language:expr, $fixture:literal;)*) => {
+    ($($variant:ident => $name:literal, $language:expr, $node_types:expr, $fixture:literal;)*) => {
         /// A grammar laconic can parse with. Exactly one parse tree shape per variant.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub enum Grammar {
@@ -36,6 +36,13 @@ macro_rules! grammars {
                 }
             }
 
+            /// The grammar's `node-types.json`: which child kinds each node kind may hold.
+            pub fn node_types(self) -> &'static str {
+                match self {
+                    $(Grammar::$variant => $node_types,)*
+                }
+            }
+
             /// The probe fixture for this grammar, as `(file name, contents)`.
             ///
             /// Lives here rather than in the probe because the test suite and the dump example both
@@ -53,13 +60,16 @@ macro_rules! grammars {
 }
 
 grammars! {
-    Go => "go", tree_sitter_go::LANGUAGE, "go.go";
-    Python => "python", tree_sitter_python::LANGUAGE, "python.py";
-    Rust => "rust", tree_sitter_rust::LANGUAGE, "rust.rs";
-    Java => "java", tree_sitter_java::LANGUAGE, "java.java";
-    TypeScript => "typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT, "typescript.ts";
-    Tsx => "tsx", tree_sitter_typescript::LANGUAGE_TSX, "tsx.tsx";
-    JavaScript => "javascript", tree_sitter_javascript::LANGUAGE, "javascript.js";
+    Go => "go", tree_sitter_go::LANGUAGE, tree_sitter_go::NODE_TYPES, "go.go";
+    Python => "python", tree_sitter_python::LANGUAGE, tree_sitter_python::NODE_TYPES, "python.py";
+    Rust => "rust", tree_sitter_rust::LANGUAGE, tree_sitter_rust::NODE_TYPES, "rust.rs";
+    Java => "java", tree_sitter_java::LANGUAGE, tree_sitter_java::NODE_TYPES, "java.java";
+    TypeScript => "typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
+        tree_sitter_typescript::TYPESCRIPT_NODE_TYPES, "typescript.ts";
+    Tsx => "tsx", tree_sitter_typescript::LANGUAGE_TSX, tree_sitter_typescript::TSX_NODE_TYPES,
+        "tsx.tsx";
+    JavaScript => "javascript", tree_sitter_javascript::LANGUAGE,
+        tree_sitter_javascript::NODE_TYPES, "javascript.js";
 }
 
 impl Grammar {

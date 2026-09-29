@@ -135,6 +135,19 @@ fn fixed(name: &str, src: &str) -> String {
     fix(src, &analysis, &findings, &registry, pack)
 }
 
+/// Doc comments above declaration kinds the packs once left off their lists. Each was Block kind,
+/// and `narration` deleted it at gate tier.
+#[test]
+fn a_doc_comment_on_a_once_missing_declaration_survives_fix() {
+    let cases = [(
+        "x.java",
+        "public enum Mode {\n    /** Updated to mean \"retry once\". */\n    RETRY,\n}\n",
+    )];
+    for (name, src) in cases {
+        assert_eq!(fixed(name, src), src, "{name}: fix removed a doc comment");
+    }
+}
+
 /// Code **after** a block comment on its line survives the fix.
 ///
 /// The whole-line branch had one guard, for code *before* the comment, so
