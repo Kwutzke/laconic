@@ -59,6 +59,112 @@ fn strip_continuation_leader(line: &str) -> &str {
     }
 }
 
+/// What each child kind of one container is. `grammar_conformance` requires every child the grammar
+/// allows to be in exactly one list, for every container a table names.
+pub struct Container {
+    pub kind: &'static str,
+    /// Parent kinds this entry applies under; empty applies anywhere. TypeScript's `statement_block`
+    /// is a function body under a function and a namespace body under `namespace`.
+    pub within: &'static [&'static str],
+    pub declarations: &'static [&'static str],
+    /// Not declarations themselves, but a declaration inside one still counts — `export`, a grouped
+    /// `var ( … )`, a decorator wrapper.
+    pub wrappers: &'static [&'static str],
+    /// Not declarations, and neither is a declaration reached from one through listed containers: a
+    /// `const` in a function body makes its specs locals.
+    pub excluded: &'static [Excluded],
+}
+
+pub struct Excluded {
+    pub reason: &'static str,
+    pub kinds: &'static [&'static str],
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Role {
+    Declaration,
+    Wrapper,
+    Excluded,
+}
+
+/// The role of `child` under `parent`. An edge no entry lists is answered from the child's kind: a
+/// kind that is a declaration somewhere is one here too, unless it is also excluded somewhere, which
+/// makes it a local under a parent nobody anticipated — a `switch` group keeps its class, a label
+/// does not admit a `var`. Under an ERROR node the real container is unknowable and the declaration
+/// wins, which keeps its doc comment out of reach of a Delete fix.
+fn role(table: &[Container], parent: Node, child: &str) -> Option<Role> {
+    let grandparent = parent.parent().map(|g| g.kind());
+    let container = table
+        .iter()
+        .filter(|c| c.kind == parent.kind())
+        .find(|c| grandparent.is_some_and(|g| c.within.contains(&g)))
+        .or_else(|| {
+            table
+                .iter()
+                .find(|c| c.kind == parent.kind() && c.within.is_empty())
+        });
+    if let Some(listed) = container.and_then(|c| listed_role(c, child)) {
+        return Some(listed);
+    }
+    let roles: Vec<Role> = table.iter().filter_map(|c| listed_role(c, child)).collect();
+    if !roles.contains(&Role::Declaration) {
+        return None;
+    }
+    if roles.contains(&Role::Excluded) && !parent.is_error() {
+        return Some(Role::Excluded);
+    }
+    Some(Role::Declaration)
+}
+
+fn listed_role(container: &Container, child: &str) -> Option<Role> {
+    if container.declarations.contains(&child) {
+        Some(Role::Declaration)
+    } else if container.wrappers.contains(&child) {
+        Some(Role::Wrapper)
+    } else if container.excluded.iter().any(|e| e.kinds.contains(&child)) {
+        Some(Role::Excluded)
+    } else {
+        None
+    }
+}
+
+/// Whether `node` is a declaration: its role is one, and the chain of roles above it reaches the
+/// root, or a node whose kind no table entry names, without passing an excluded one.
+pub fn is_declaration(table: &[Container], node: Node) -> bool {
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    if role(table, parent, node.kind()) != Some(Role::Declaration) {
+        return false;
+    }
+    let mut current = parent;
+    while let Some(above) = current.parent() {
+        match role(table, above, current.kind()) {
+            Some(Role::Declaration | Role::Wrapper) => current = above,
+            Some(Role::Excluded) => return false,
+            None => return true,
+        }
+    }
+    true
+}
+
+/// Every declaration under `root`, in document order.
+pub fn declarations<'t>(table: &[Container], root: Node<'t>) -> Vec<Node<'t>> {
+    let mut cursor = root.walk();
+    let mut stack = vec![root];
+    let mut out = Vec::new();
+    while let Some(n) = stack.pop() {
+        for child in n.named_children(&mut cursor) {
+            if is_declaration(table, child) {
+                out.push(child);
+            }
+            stack.push(child);
+        }
+    }
+    out.sort_by_key(|n| n.start_byte());
+    out
+}
+
 /// The named descendants of `root` matching any of `kinds`, in document order.
 pub fn descendants_of_kind<'t>(root: Node<'t>, kinds: &[&str]) -> Vec<Node<'t>> {
     let mut cursor = root.walk();
@@ -143,10 +249,30 @@ pub fn declared_name<'a>(node: Node, src: &'a str) -> Option<&'a str> {
         .map(|n| &src[n.byte_range()])
 }
 
-/// Whether a declaration is wrapped in an `export` statement — the TS/JS shape.
+/// The outermost of the `export` and `declare` wrappers around a TS/JS declaration, or the
+/// declaration itself. A comment above `export declare function f` precedes this node.
+pub fn outermost_wrapper(node: Node) -> Node {
+    let mut current = node;
+    while let Some(parent) = current
+        .parent()
+        .filter(|p| matches!(p.kind(), "export_statement" | "ambient_declaration"))
+    {
+        current = parent;
+    }
+    current
+}
+
+/// Whether a declaration is wrapped in an `export` statement, directly or around a `declare`.
 pub fn is_exported_declaration(node: Node) -> bool {
-    node.parent()
-        .is_some_and(|p| p.kind() == "export_statement")
+    let mut current = node;
+    while let Some(parent) = current.parent() {
+        match parent.kind() {
+            "export_statement" => return true,
+            "ambient_declaration" => current = parent,
+            _ => return false,
+        }
+    }
+    false
 }
 
 pub fn visibility_from_export(node: Node) -> Visibility {

@@ -45,7 +45,7 @@ fn block_with<'a>(a: &'a FileAnalysis, needle: &str) -> &'a laconic_engine::Comm
         })
 }
 
-/// Concern 1 — every extension the five packs claim resolves, and to the right grammar. TS/JS is
+/// Concern 1 — every extension the packs claim resolves, and to the right grammar. TS/JS is
 /// three grammars behind one pack, which is the whole reason resolution is per extension.
 #[test]
 fn every_claimed_extension_resolves() {
@@ -64,6 +64,7 @@ fn every_claimed_extension_resolves() {
         ("a.jsx", "typescript"),
         ("a.mts", "typescript"),
         ("a.cts", "typescript"),
+        ("a.swift", "swift"),
     ];
     for (file, pack_name) in expected {
         let (pack, _) = resolve(&packs, Path::new(file)).unwrap_or_else(|| panic!("{file}"));
@@ -245,6 +246,24 @@ fn rust_enum_variants_inherit_the_enums_visibility() {
     );
 }
 
+/// A trait member carries no `pub`. Read as private, a public trait's method names became words a
+/// doc comment could not use without `implInInterface` firing.
+#[test]
+fn rust_trait_members_inherit_the_traits_visibility() {
+    let src = "pub trait Store {\n    fn load(&self);\n    type Key;\n}\n\ntrait Hidden {\n    fn peek(&self);\n}\n";
+    let a = analyse_str("x.rs", src);
+    let vis = |n: &str| {
+        a.declared
+            .iter()
+            .find(|d| d.name == n)
+            .map(|d| d.visibility.clone())
+            .unwrap_or_else(|| panic!("{n} not declared; got {:?}", a.declared))
+    };
+    assert_eq!(vis("load"), Visibility::Exported);
+    assert_eq!(vis("Key"), Visibility::Exported);
+    assert_eq!(vis("peek"), Visibility::Private);
+}
+
 /// A Rust doc comment is attached to the item below it. The grammar's `doc` child carries the
 /// trailing newline, so the comment node's own end row is one past its text — read directly, every
 /// Rust doc comment resolves as Detached.
@@ -388,4 +407,242 @@ fn a_typescript_type_counts_what_it_declares() {
     // A type alias names no `body` field at all, so it reaches the count through neither branch.
     let alias = "export type ID = string;\n";
     assert_eq!(members_of("x.ts", alias, "type ID"), 0);
+}
+
+fn subject_texts<'a>(a: &FileAnalysis, src: &'a str) -> Vec<&'a str> {
+    a.subjects.iter().map(|s| &src[s.span.clone()]).collect()
+}
+
+fn declared_visibility(a: &FileAnalysis, name: &str) -> Option<Visibility> {
+    a.declared
+        .iter()
+        .find(|d| d.name == name)
+        .map(|d| d.visibility.clone())
+}
+
+/// A local declaration stays local whatever wraps it: a label in Go, a function body in TS. A
+/// generic type argument is not an interface element, though the Go grammar names it the same.
+#[test]
+fn a_local_declaration_is_not_a_subject_under_any_parent() {
+    let go = "package p\n\nfunc run() {\nL:\n\tvar handlers = map[string]int{}\n\t_ = handlers\n\tgoto L\n}\n\ntype X = List[int]\n";
+    let a = analyse_str("x.go", go);
+    let subjects = subject_texts(&a, go);
+    assert!(
+        !subjects.iter().any(|s| s.starts_with("handlers")),
+        "{subjects:?}"
+    );
+    assert!(!subjects.contains(&"int"), "{subjects:?}");
+
+    let ts = "namespace N {\n  const x = 1;\n}\n\nfunction f() {\n  const y = 2;\n}\n";
+    let a = analyse_str("x.ts", ts);
+    let subjects = subject_texts(&a, ts);
+    assert!(
+        subjects.contains(&"const x = 1;"),
+        "a namespace member: {subjects:?}"
+    );
+    assert!(!subjects.contains(&"const y = 2;"), "a local: {subjects:?}");
+}
+
+/// Outside package-info.java the comment above `package` is a licence header, and the engine drops
+/// a licence header only while it is not documentation.
+#[test]
+fn a_java_licence_header_above_package_draws_nothing() {
+    let src = "/**\n * Copyright 2026 Example\n * Licensed under the Apache License 2.0\n * you may not use this file except\n * in compliance with the License.\n * See the LICENSE file.\n * All rights reserved.\n */\npackage com.example;\n\npublic class A {}\n";
+    assert_eq!(rules_fired("x.java", src), Vec::<&str>::new());
+}
+
+/// A declared name is a name the declaration binds, and it is as visible as its declaration.
+#[test]
+fn declared_names_are_bound_names_at_their_owners_visibility() {
+    let ts = "export declare function helper(): void;\nexport type Options = { maxAttempts: number };\nexport interface Registry { [entryName: string]: unknown }\n";
+    let a = analyse_str("x.ts", ts);
+    assert_eq!(
+        declared_visibility(&a, "helper"),
+        Some(Visibility::Exported)
+    );
+    assert_eq!(
+        declared_visibility(&a, "maxAttempts"),
+        Some(Visibility::Exported),
+        "{:?}",
+        a.declared
+    );
+    assert_eq!(
+        declared_visibility(&a, "entryName"),
+        None,
+        "an index key names no member"
+    );
+
+    let swift = "func make() -> JSONDecoder { JSONDecoder() }\n\npublic macro stringify(_ v: Int) = #externalMacro(module: \"M\", type: \"T\")\n\nprivate func outer() {\n    func inner() {}\n}\n";
+    let a = analyse_str("x.swift", swift);
+    assert!(declared_visibility(&a, "make").is_some());
+    assert_eq!(
+        declared_visibility(&a, "JSONDecoder"),
+        None,
+        "a return type is not declared"
+    );
+    assert_eq!(
+        declared_visibility(&a, "stringify"),
+        Some(Visibility::Exported)
+    );
+    assert_eq!(declared_visibility(&a, "inner"), Some(Visibility::Private));
+}
+
+/// A Swift type body carries `#if` directives as named children, and they are not members.
+#[test]
+fn a_swift_directive_is_not_a_member() {
+    let src = "public struct S {\n#if DEBUG\n    var a = 1\n#endif\n}\n";
+    let a = analyse_str("x.swift", src);
+    let s = a
+        .subjects
+        .iter()
+        .find(|s| src[s.span.clone()].starts_with("public struct S"))
+        .expect("the struct");
+    assert_eq!(s.member_count, 1);
+}
+
+/// Swift's doc comment is marker text on a node kind shared with `//` and `// MARK:`, so the marker
+/// test carries it — and `////` opens with the same characters and is a banner.
+#[test]
+fn swift_doc_comments_are_marker_text_on_every_member_kind() {
+    let src = "\
+/// Documents a function.
+public func f() {}
+
+////////
+
+public func g() {}
+
+public extension Array {
+    /// Documents an extension member.
+    func h() {}
+}
+
+public protocol Source {
+    /// Documents a requirement.
+    func poll()
+}
+
+public enum Mode {
+    /// Documents a case.
+    case retry
+}
+
+/**
+ * Documents a struct.
+ */
+public struct S {
+    func run() {
+        /// Not documentation: a statement follows.
+        print(1)
+    }
+}
+";
+    let a = analyse_str("x.swift", src);
+    for doc in [
+        "Documents a function",
+        "Documents an extension member",
+        "Documents a requirement",
+        "Documents a case",
+        "Documents a struct",
+    ] {
+        assert_eq!(block_with(&a, doc).kind, CommentKind::Doc, "{doc}");
+    }
+    assert_eq!(block_with(&a, "Not documentation").kind, CommentKind::Line);
+    let banner = a
+        .blocks
+        .iter()
+        .find(|b| src[b.span.clone()].starts_with("////////"))
+        .expect("the slash banner");
+    assert_eq!(banner.kind, CommentKind::Line);
+}
+
+/// A member with no modifier is as visible as Swift makes it, which depends on its container.
+#[test]
+fn swift_visibility_follows_the_container() {
+    let src = "\
+public extension Array {
+    func inPublicExtension() {}
+}
+
+extension Array {
+    func inPlainExtension() {}
+}
+
+public protocol Source {
+    func requirement()
+}
+
+public enum Mode {
+    case retry
+}
+
+public struct Row {
+    var unmarked = 0
+    public private(set) var settable = 0
+    open func overridable() {}
+}
+
+fileprivate struct Hidden {
+    var inPrivateType = 0
+}
+";
+    let a = analyse_str("x.swift", src);
+    let vis = |n: &str| {
+        a.declared
+            .iter()
+            .find(|d| d.name == n)
+            .map(|d| d.visibility.clone())
+            .unwrap_or_else(|| panic!("{n} not declared; got {:?}", a.declared))
+    };
+    let module = Visibility::Restricted("module".to_string());
+    assert_eq!(vis("inPublicExtension"), Visibility::Exported);
+    assert_eq!(vis("inPlainExtension"), module);
+    assert_eq!(vis("requirement"), Visibility::Exported);
+    assert_eq!(vis("retry"), Visibility::Exported);
+    assert_eq!(vis("unmarked"), module);
+    assert_eq!(
+        vis("settable"),
+        Visibility::Exported,
+        "`private(set)` restricts the setter"
+    );
+    assert_eq!(vis("overridable"), Visibility::Exported);
+    assert_eq!(vis("inPrivateType"), Visibility::Private);
+    assert!(
+        a.declared.iter().all(|d| d.name != "Array"),
+        "an extension declares no name of its own"
+    );
+}
+
+/// Most of a SwiftUI app's code is a computed `body` property, so it is measured like a function.
+#[test]
+fn a_swiftui_body_is_a_density_subject() {
+    let src = "\
+struct ContentView: View {
+    var body: some View {
+        // stack the rows
+        // one per item
+        // with padding
+        VStack {
+            Text(\"a\")
+        }
+        .padding()
+    }
+}
+";
+    // Located by line: the struct around `body` is a subject too and covers the same comments.
+    let packs = all();
+    let path = Path::new("x.swift");
+    let (pack, grammar) = resolve(&packs, path).expect("swift resolves");
+    let analysis = analyse(pack, grammar, path, src, &Config::unrestricted()).expect("analysable");
+    let rules = Rules {
+        block: all_block_rules(),
+        subject: all_subject_rules(),
+    };
+    let (findings, _) = dispatch(path, src, &analysis, &Resolved::default(), &rules);
+    let density_lines: Vec<usize> = findings
+        .iter()
+        .filter(|f| f.rule == "density")
+        .map(|f| f.line)
+        .collect();
+    assert!(density_lines.contains(&2), "{density_lines:?}");
 }

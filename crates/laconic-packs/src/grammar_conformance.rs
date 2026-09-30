@@ -1,11 +1,15 @@
-//! Every node kind a pack names, checked against the grammar it names it for.
+//! The node kinds packs name in their lists and container tables, checked against the grammars they
+//! claim. Kinds a pack names only inside its code are not covered.
 //!
-//! Nothing read the pinned grammars these hand-written lists describe, so a list was an assertion
-//! no test could fail. Each kind must resolve in a grammar its pack claims, and each
-//! `MEMBER_CONTAINERS` entry must be reachable as some node's `body` field, shown by a probe
-//! written by hand so it cannot assert the list against itself.
+//! Each listed kind must resolve in a grammar its pack claims; each `MEMBER_CONTAINERS` entry must be
+//! reachable as some node's `body` field, shown by a probe written by hand so it cannot assert the
+//! list against itself; and each container table must classify every child its container can hold.
 
-use crate::{go, java, python, rust, typescript};
+use crate::common::Container;
+use crate::{go, java, python, rust, swift, typescript};
+use laconic_grammars::Grammar;
+use serde_json::Value;
+use std::collections::BTreeSet;
 use tree_sitter::{Language, Node, Parser};
 
 /// Every list a pack names node kinds in, with its owning pack. Hand-enumerated, which is the one
@@ -13,21 +17,12 @@ use tree_sitter::{Language, Node, Parser};
 fn lists() -> Vec<(&'static str, &'static str, &'static [&'static str])> {
     vec![
         ("go", "COMMENT_KINDS", go::COMMENT_KINDS),
-        ("go", "DOCUMENTABLE_ANYWHERE", go::DOCUMENTABLE_ANYWHERE),
-        (
-            "go",
-            "DOCUMENTABLE_AT_FILE_SCOPE",
-            go::DOCUMENTABLE_AT_FILE_SCOPE,
-        ),
         ("python", "COMMENT_KINDS", python::COMMENT_KINDS),
-        ("python", "SCOPES", python::SCOPES),
         ("rust", "COMMENT_KINDS", rust::COMMENT_KINDS),
-        ("rust", "ITEMS", rust::ITEMS),
         ("rust", "NON_STATEMENTS", rust::NON_STATEMENTS),
         ("java", "COMMENT_KINDS", java::COMMENT_KINDS),
-        ("java", "DECLARATIONS", java::DECLARATIONS),
+        ("swift", "COMMENT_KINDS", swift::COMMENT_KINDS),
         ("typescript", "COMMENT_KINDS", typescript::COMMENT_KINDS),
-        ("typescript", "DECLARATIONS", typescript::DECLARATIONS),
         (
             "typescript",
             "MEMBER_CONTAINERS",
@@ -126,6 +121,137 @@ fn every_member_container_is_reachable_as_a_body_field() {
             "{kind}: no node in {src:?} names one as its `body` field"
         );
     }
+}
+
+/// Every pack's container table. Hand-enumerated like [`lists`], with the same gap.
+fn tables() -> Vec<(&'static str, &'static [Container])> {
+    vec![
+        ("go", go::CONTAINERS),
+        ("java", java::CONTAINERS),
+        ("python", python::CONTAINERS),
+        ("rust", rust::CONTAINERS),
+        ("swift", swift::CONTAINERS),
+        ("typescript", typescript::CONTAINERS),
+    ]
+}
+
+/// The named child kinds `node-types.json` allows under `container`, supertypes expanded to the
+/// concrete kinds a parse tree carries. `None` when the grammar has no such kind.
+fn allowed_children(node_types: &str, container: &str) -> Option<BTreeSet<String>> {
+    let types: Vec<Value> = serde_json::from_str(node_types).expect("node-types.json parses");
+    let named: Vec<&Value> = types.iter().filter(|t| t["named"] == true).collect();
+    let entry = named.iter().find(|t| t["type"] == container)?;
+    let mut refs: Vec<&Value> = Vec::new();
+    if let Some(children) = entry["children"]["types"].as_array() {
+        refs.extend(children);
+    }
+    if let Some(fields) = entry["fields"].as_object() {
+        for field in fields.values() {
+            refs.extend(field["types"].as_array().into_iter().flatten());
+        }
+    }
+    let mut out = BTreeSet::new();
+    while let Some(r) = refs.pop() {
+        if r["named"] != true {
+            continue;
+        }
+        let kind = r["type"].as_str().expect("a type name");
+        match named
+            .iter()
+            .find(|t| t["type"] == kind && t.get("subtypes").is_some())
+        {
+            Some(supertype) => refs.extend(supertype["subtypes"].as_array().into_iter().flatten()),
+            None => {
+                out.insert(kind.to_string());
+            }
+        }
+    }
+    Some(out)
+}
+
+/// Every child kind a container can hold is classified exactly once, and nothing is classified that
+/// the container cannot hold — checked against every grammar the pack claims.
+#[test]
+fn every_child_of_a_container_is_classified_exactly_once() {
+    let mut problems: Vec<String> = Vec::new();
+    for (pack_name, table) in tables() {
+        let grammars: Vec<Grammar> = crate::all()
+            .iter()
+            .find(|p| p.name() == pack_name)
+            .expect("a pack with this name")
+            .extensions()
+            .iter()
+            .map(|(_, g)| *g)
+            .collect();
+        for (i, container) in table.iter().enumerate() {
+            if table[..i]
+                .iter()
+                .any(|c| c.kind == container.kind && c.within == container.within)
+            {
+                problems.push(format!(
+                    "{pack_name}: {} is listed twice under the same parents",
+                    container.kind
+                ));
+            }
+            let classified: Vec<&str> = container
+                .declarations
+                .iter()
+                .chain(container.wrappers)
+                .chain(container.excluded.iter().flat_map(|e| e.kinds))
+                .copied()
+                .collect();
+            let unique: BTreeSet<&str> = classified.iter().copied().collect();
+            if unique.len() != classified.len() {
+                problems.push(format!(
+                    "{pack_name}: {} classifies a kind more than once",
+                    container.kind
+                ));
+            }
+            for excluded in container.excluded {
+                if excluded.reason.trim().is_empty() {
+                    problems.push(format!(
+                        "{pack_name}: {} excludes {:?} without a reason",
+                        container.kind, excluded.kinds
+                    ));
+                }
+            }
+
+            let mut allowed_anywhere: BTreeSet<String> = BTreeSet::new();
+            for grammar in &grammars {
+                let Some(allowed) = allowed_children(grammar.node_types(), container.kind) else {
+                    continue;
+                };
+                for kind in &allowed {
+                    if !unique.contains(kind.as_str()) {
+                        problems.push(format!(
+                            "{pack_name}: {} in {} can hold {kind:?}, which is not classified",
+                            container.kind,
+                            grammar.name()
+                        ));
+                    }
+                }
+                allowed_anywhere.extend(allowed);
+            }
+            if allowed_anywhere.is_empty() {
+                problems.push(format!(
+                    "{pack_name}: {} is a container in no grammar the pack claims",
+                    container.kind
+                ));
+                continue;
+            }
+            for kind in &unique {
+                if !allowed_anywhere.contains(*kind) {
+                    problems.push(format!(
+                        "{pack_name}: {} classifies {kind:?}, which it can never hold",
+                        container.kind
+                    ));
+                }
+            }
+        }
+    }
+    problems.sort();
+    problems.dedup();
+    assert!(problems.is_empty(), "{problems:#?}");
 }
 
 fn names_as_body(node: Node, kind: &str) -> bool {

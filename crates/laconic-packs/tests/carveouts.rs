@@ -123,6 +123,10 @@ fn fixture(ext: &str) -> (&'static str, &'static str) {
             "carveouts.ts",
             include_str!("../testdata/typescript/carveouts.ts"),
         ),
+        "swift" => (
+            "carveouts.swift",
+            include_str!("../testdata/swift/carveouts.swift"),
+        ),
         other => panic!("no carve-out fixture for .{other}"),
     }
 }
@@ -220,11 +224,17 @@ fn typescript_carve_outs() {
     each_carve_out_does_work("ts");
 }
 
+#[test]
+fn swift_carve_outs() {
+    every_prefix_is_exercised("swift");
+    each_carve_out_does_work("swift");
+}
+
 /// A generated file is excluded whole, and the same standard applies: without the marker the file
 /// is analysed normally.
 #[test]
 fn generated_markers_exclude_the_file() {
-    for ext in ["go", "py", "rs", "java", "ts"] {
+    for ext in ["go", "py", "rs", "java", "ts", "swift"] {
         let pack = pack_for(ext);
         let (name, src) = fixture(ext);
         let path = Path::new(name);

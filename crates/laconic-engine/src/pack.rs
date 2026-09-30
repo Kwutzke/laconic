@@ -56,7 +56,7 @@ pub trait Pack {
 
     /// Concern 5 — Line or Block for one comment node.
     ///
-    /// Doc is not answered here: concern 6 owns it, because for three of the five languages Doc is
+    /// Doc is not answered here: concern 6 owns it, because in several languages Doc is
     /// positional or structural and cannot be decided from a comment node alone.
     fn comment_kind(&self, node: Node, src: &str) -> CommentKind;
 

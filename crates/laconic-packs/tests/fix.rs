@@ -135,6 +135,102 @@ fn fixed(name: &str, src: &str) -> String {
     fix(src, &analysis, &findings, &registry, pack)
 }
 
+/// Doc comments above declaration kinds the packs once left off their lists. Each was Block kind,
+/// and `narration` deleted it at gate tier.
+#[test]
+fn a_doc_comment_on_a_once_missing_declaration_survives_fix() {
+    let cases = [
+        (
+            "x.java",
+            "public enum Mode {\n    /** Updated to mean \"retry once\". */\n    RETRY,\n}\n",
+        ),
+        (
+            "x.ts",
+            "/** Updated to use a Map. */\nexport const lookup = (k: string) => cache.get(k);\n",
+        ),
+    ];
+    for (name, src) in cases {
+        assert_eq!(fixed(name, src), src, "{name}: fix removed a doc comment");
+    }
+}
+
+/// Doc comments whose declaration sits under a parent the pack's table does not name, or under a
+/// chain of `export` and `declare` wrappers. Each was Block kind, and `narration` deleted it.
+#[test]
+fn a_doc_comment_under_an_unlisted_or_wrapped_parent_survives_fix() {
+    let cases = [
+        // tree-sitter recovers this by putting the method under an ERROR node.
+        (
+            "x.ts",
+            "export class A {\n  a(: {\n  /** Updated to handle nulls. */\n  m(): void {}\n}\n",
+        ),
+        (
+            "x.java",
+            "class A {\n    void f(int k) {\n        switch (k) {\n            case 1:\n                /** Updated to retry once. */\n                class L {}\n                break;\n        }\n    }\n}\n",
+        ),
+        (
+            "x.ts",
+            "export default {\n  /** Changed to load lazily. */\n  load() {},\n};\n",
+        ),
+        (
+            "x.ts",
+            "/** Updated to accept a Map. */\nexport declare function lookup(k: string): void;\n",
+        ),
+        (
+            "x.ts",
+            "/** Changed at build time. */\ndeclare const VERSION: string;\n",
+        ),
+        (
+            "x.ts",
+            "declare global {\n  /** Changed to a boolean. */\n  var __DEV__: boolean;\n}\nexport {};\n",
+        ),
+    ];
+    for (name, src) in cases {
+        assert_eq!(fixed(name, src), src, "{name}: fix removed a doc comment");
+    }
+}
+
+/// A Swift doc comment is marker text above any member kind, and `narration` never deletes one.
+#[test]
+fn a_swift_doc_comment_survives_fix_on_every_member_kind() {
+    let src = "\
+public extension Array {
+    /// Updated to skip the first element.
+    func rest() -> ArraySlice<Element> { dropFirst() }
+}
+
+public protocol Source {
+    /// Changed to be async.
+    func poll() async
+}
+
+public enum Mode {
+    /// Updated to mean \"retry once\".
+    case retry
+}
+";
+    assert_eq!(fixed("x.swift", src), src);
+}
+
+/// A narration comment in a Swift body is deleted, and what remains still parses.
+#[test]
+fn fixing_swift_leaves_a_file_that_parses() {
+    let src = "\
+public func load() -> Int {
+    // changed to use a map
+    let x = 1
+    return x
+}
+";
+    let once = fixed("x.swift", src);
+    assert!(!once.contains("changed to use"), "{once}");
+    let tree = laconic_grammars::Grammar::Swift
+        .parser()
+        .parse(&once, None)
+        .expect("parses");
+    assert!(!tree.root_node().has_error(), "{once}");
+}
+
 /// Code **after** a block comment on its line survives the fix.
 ///
 /// The whole-line branch had one guard, for code *before* the comment, so

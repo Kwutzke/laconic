@@ -812,9 +812,9 @@ fn a_grouped_spec_comment_is_a_doc_comment() {
     assert_eq!(block.kind, CommentKind::Doc);
 }
 /// A spec is a godoc surface only where its declaration is. `var`, `const` and `type` are also
-/// ordinary statements inside a function body, where a comment above one documents nothing public —
-/// the reason `DOCUMENTABLE_AT_FILE_SCOPE` exists. Listed unconditionally the spec kinds made every
-/// local variable a subject in its own right, and `density` reported on a three-line map literal.
+/// ordinary statements inside a function body, where a comment above one documents nothing public.
+/// Listed unconditionally the spec kinds made every local variable a subject in its own right, and
+/// `density` reported on a three-line map literal.
 #[test]
 fn a_spec_inside_a_function_body_is_not_documentable() {
     let local = "package x\n\ntype Handler int\n\nfunc run() error {\n\tvar handlers = map[string]Handler{\n\t\t// the fallback used when the key is absent\n\t\t\"\": 0,\n\t}\n\t_ = handlers\n\treturn nil\n}\n";
