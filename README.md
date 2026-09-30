@@ -120,6 +120,14 @@ a Rust `//!` or a Python module docstring documents something, so `docbloat` hol
 
 Adding a language is adding a pack, not touching the engine.
 
+**A pack's declarations are a table, checked against the grammar.** For each container a
+declaration can sit in — the file root, a type body, a function body — the pack classifies every
+child kind as a declaration, a wrapper around one, or excluded with a stated reason. A test reads the
+grammar's `node-types.json` and fails `cargo test` on any child left unclassified, naming the pack,
+the container and the kind. That matters because a missed declaration kind leaves the doc comment
+above it an ordinary comment, which `laconic fix` may delete; a grammar upgrade that adds one to a
+listed container now fails the suite instead.
+
 | Pack | Extensions |
 |---|---|
 | Go | `.go` |
