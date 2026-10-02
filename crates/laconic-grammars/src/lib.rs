@@ -71,6 +71,7 @@ grammars! {
     JavaScript => "javascript", tree_sitter_javascript::LANGUAGE,
         tree_sitter_javascript::NODE_TYPES, "javascript.js";
     Swift => "swift", tree_sitter_swift::LANGUAGE, tree_sitter_swift::NODE_TYPES, "swift.swift";
+    Bash => "bash", tree_sitter_bash::LANGUAGE, tree_sitter_bash::NODE_TYPES, "bash.sh";
 }
 
 impl Grammar {
@@ -114,7 +115,7 @@ mod tests {
         seen.sort_unstable();
         seen.dedup();
         assert_eq!(seen.len(), before, "no duplicates");
-        assert_eq!(before, 8);
+        assert_eq!(before, 9);
     }
 
     #[test]
