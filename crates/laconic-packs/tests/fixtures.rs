@@ -90,16 +90,38 @@ fn expected(path: &Path) -> Vec<String> {
         .collect()
 }
 
-fn fixtures_for(rule: &str) -> Vec<PathBuf> {
-    let dir = testdata().join("go").join(rule);
+/// Every language directory holding a fixture directory for any rule. Each one must then hold all
+/// of them, which is what makes adding the first rule directory for a language the commitment.
+fn languages() -> Vec<String> {
+    let mut out: Vec<String> = fs::read_dir(testdata())
+        .expect("testdata is readable")
+        .map(|e| e.expect("readable entry").path())
+        .filter(|p| RULES.iter().any(|rule| p.join(rule).is_dir()))
+        .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+        .collect();
+    out.sort();
+    assert!(out.len() > 1, "per-rule fixture languages found: {out:?}");
+    out
+}
+
+fn fixtures_for(language: &str, rule: &str) -> Vec<PathBuf> {
+    let dir = testdata().join(language).join(rule);
     let mut out: Vec<PathBuf> = fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("{} is missing: {e}", dir.display()))
         .map(|e| e.expect("readable entry").path())
-        .filter(|p| p.extension().is_some_and(|e| e == "go"))
+        .filter(|p| p.extension().is_some_and(|e| e != "expected"))
         .collect();
     out.sort();
     assert!(!out.is_empty(), "{} has no fixtures", dir.display());
     out
+}
+
+/// The one fixture in a rule directory with this stem.
+fn fixture(language: &str, rule: &str, stem: &str) -> PathBuf {
+    fixtures_for(language, rule)
+        .into_iter()
+        .find(|p| p.file_stem().is_some_and(|s| s == stem))
+        .unwrap_or_else(|| panic!("{language}/{rule} has no {stem} fixture"))
 }
 
 /// AC2: every rule has positive **and** negative fixtures. A rule with only positives is a rule
@@ -107,19 +129,11 @@ fn fixtures_for(rule: &str) -> Vec<PathBuf> {
 /// about.
 #[test]
 fn every_rule_has_a_positive_and_a_negative_fixture() {
-    for rule in RULES {
-        let names: Vec<String> = fixtures_for(rule)
-            .iter()
-            .map(|p| p.file_stem().unwrap().to_string_lossy().to_string())
-            .collect();
-        assert!(
-            names.contains(&"positive".to_string()),
-            "{rule} has no positive fixture"
-        );
-        assert!(
-            names.contains(&"negative".to_string()),
-            "{rule} has no negative fixture"
-        );
+    for language in languages() {
+        for rule in RULES {
+            fixture(&language, rule, "positive");
+            fixture(&language, rule, "negative");
+        }
     }
 }
 
@@ -148,8 +162,11 @@ const RULES: &[&str] = &[
 #[test]
 fn every_fixture_matches_its_expectations() {
     let mut failures = Vec::new();
-    for rule in RULES {
-        for path in fixtures_for(rule) {
+    for (language, rule) in languages()
+        .iter()
+        .flat_map(|l| RULES.iter().map(move |r| (l, r)))
+    {
+        for path in fixtures_for(language, rule) {
             let (got, want) = (actual(&path), expected(&path));
             if got != want {
                 failures.push(format!(
@@ -188,9 +205,13 @@ fn every_instruction_opens_with_the_change_to_make() {
         "shorten",
         "reduce",
     ];
+    let languages = languages();
     let mut seen = 0;
-    for rule in RULES {
-        let path = testdata().join("go").join(rule).join("positive.go");
+    for (language, rule) in languages
+        .iter()
+        .flat_map(|l| RULES.iter().map(move |r| (l, r)))
+    {
+        let path = fixture(language, rule, "positive");
         for instruction in instructions(&path) {
             let first = instruction
                 .split_whitespace()
@@ -204,15 +225,21 @@ fn every_instruction_opens_with_the_change_to_make() {
             seen += 1;
         }
     }
-    assert!(seen >= RULES.len(), "every rule contributed an instruction");
+    assert!(
+        seen >= RULES.len() * languages.len(),
+        "every rule contributed an instruction"
+    );
 }
 
 /// A negative fixture reports nothing at all. Stated separately from the sidecar comparison so the
 /// suite fails loudly if a negative fixture ever gains an expectation by accident.
 #[test]
 fn negative_fixtures_report_nothing() {
-    for rule in RULES {
-        let path = testdata().join("go").join(rule).join("negative.go");
+    for (language, rule) in languages()
+        .iter()
+        .flat_map(|l| RULES.iter().map(move |r| (l, r)))
+    {
+        let path = fixture(language, rule, "negative");
         assert!(
             expected(&path).is_empty(),
             "{}: a negative fixture expects no findings",
