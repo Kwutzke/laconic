@@ -48,6 +48,9 @@ impl Pack for WithoutCarveOut {
     fn extensions(&self) -> &[(&'static str, Grammar)] {
         self.inner.extensions()
     }
+    fn interpreters(&self) -> &[(&'static str, Grammar)] {
+        self.inner.interpreters()
+    }
     fn comment_node_kinds(&self, grammar: Grammar) -> &[&'static str] {
         self.inner.comment_node_kinds(grammar)
     }

@@ -174,6 +174,32 @@ fn an_unclaimed_extension_is_silent() {
     assert_eq!(run.stdout, "", "an unclaimed extension produced output");
 }
 
+/// An extensionless file is claimed by its shebang or not at all, and every way of not being claimed
+/// is as silent as an unclaimed extension: no shebang, an interpreter no pack claims, binary
+/// content, a file that cannot be opened. A shebang does not override an extension either.
+#[test]
+fn an_extensionless_file_no_shebang_claims_is_silent() {
+    let dir = tempdir("unclaimed-shebang");
+    write(&dir, "plain", "//////// not code\n");
+    write(&dir, "tool", "#!/usr/bin/env python3\n# ======== \n");
+    write(&dir, "zshrc", "#!/bin/zsh\n# ======== \n");
+    write(&dir, "notes.txt", "#!/bin/sh\n# ======== \n");
+    std::fs::write(dir.join("blob"), [0x23, 0x21, 0xff, 0xfe, 0x00, 0x0a]).expect("write");
+    let locked = dir.join("locked");
+    std::fs::write(&locked, "#!/bin/sh\n# ======== \n").expect("write");
+    set_mode(&locked, 0o000);
+
+    let run = laconic(&dir, &["check", "--no-config"]);
+    set_mode(&locked, 0o644);
+    assert_eq!(run.code, 0, "stderr was {}", run.stderr);
+    assert_eq!(run.stdout, "", "an unclaimed file produced output");
+}
+
+fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).expect("chmod");
+}
+
 /// A file laconic cannot read is named, and the run carries on over the rest.
 ///
 /// The opposite of the config aborts above, deliberately: a file is data and a config is
@@ -256,8 +282,8 @@ fn an_unknown_command_exits_two() {
 
 /// A mistyped **short** flag is an error too, and this is the case that was not.
 ///
-/// `-q` fell through to the path arm; a path with no extension resolves no pack and is skipped in
-/// silence, which is right for `data.json` and wrong for a flag. The run scanned nothing and exited
+/// `-q` fell through to the path arm; a path no pack claims is skipped in silence, which is right
+/// for `data.json` and wrong for a flag. The run scanned nothing and exited
 /// 0, so a hook or a CI step with a typo in it reported a clean tree.
 #[test]
 fn a_mistyped_short_flag_exits_two_rather_than_reporting_clean() {

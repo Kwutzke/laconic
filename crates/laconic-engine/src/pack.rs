@@ -1,4 +1,4 @@
-//! The pack interface: twelve concerns, five declarations and seven strategies.
+//! The pack interface: thirteen concerns, six declarations and seven strategies.
 //!
 //! What protects charter constraint 4 is this enumeration plus the trait being open — not a claim
 //! that per-language strategies collapse. A language whose strategy fits nothing already here
@@ -43,6 +43,12 @@ pub trait Pack {
     /// Per extension rather than per pack: TypeScript, TSX and JavaScript are three grammars behind
     /// one TS/JS pack.
     fn extensions(&self) -> &[(&'static str, Grammar)];
+
+    /// Concern 13 — the programs a shebang may name for this pack, consulted only for a path with
+    /// no extension: a hook or a `bin/` script says what it is on its first line and nowhere else.
+    fn interpreters(&self) -> &[(&'static str, Grammar)] {
+        &[]
+    }
 
     /// Concern 2 — which node types carry comments in this grammar. No type is common to all
     /// grammars, so this cannot be an engine constant.

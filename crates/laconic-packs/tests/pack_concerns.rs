@@ -79,6 +79,27 @@ fn every_claimed_extension_resolves() {
     assert_ne!(ts, js);
 }
 
+/// Resolution takes the first pack that claims an extension or an interpreter, so a second claim
+/// would lose in silence to registration order rather than fail anywhere a user could see it.
+#[test]
+fn no_two_packs_claim_the_same_extension_or_interpreter() {
+    let packs = all();
+    let mut extensions = std::collections::BTreeMap::new();
+    let mut interpreters = std::collections::BTreeMap::new();
+    for p in &packs {
+        for (ext, _) in p.extensions() {
+            if let Some(first) = extensions.insert(*ext, p.name()) {
+                panic!("{} and {first} both claim .{ext}", p.name());
+            }
+        }
+        for (name, _) in p.interpreters() {
+            if let Some(first) = interpreters.insert(*name, p.name()) {
+                panic!("{} and {first} both claim the interpreter {name}", p.name());
+            }
+        }
+    }
+}
+
 /// Python's doc comment is not a comment node, and it documents the scope that **contains** it.
 #[test]
 fn a_python_docstring_documents_its_enclosing_scope() {

@@ -1,6 +1,6 @@
 //! The per-file pipeline, from a path to blocks that are ready to dispatch.
 //!
-//! `resolve pack by extension → parse → extract comment nodes → group into runs → drop machine
+//! `resolve pack by extension, or by shebang without one → parse → extract comment nodes → group into runs → drop machine
 //! directives and lift out ignore directives within each run → resolve attachment, kind and
 //! subject → drop excluded regions`.
 //!
@@ -15,6 +15,7 @@ use crate::domain::{
 use crate::exclude::Config;
 use crate::pack::Pack;
 use laconic_grammars::Grammar;
+use std::io::Read;
 use std::ops::Range;
 use std::path::Path;
 use tree_sitter::Node;
@@ -63,6 +64,56 @@ pub fn resolve<'p>(packs: &'p [Box<dyn Pack>], path: &Path) -> Option<(&'p dyn P
             .find(|(e, _)| *e == ext)
             .map(|(_, g)| (p.as_ref(), *g))
     })
+}
+
+/// Resolve a pack for a file on disk — concern 1, then concern 13 for a path with no extension.
+///
+/// The extension decides whenever there is one, so only an extensionless file is opened here, and
+/// a file that cannot be read is skipped like one no pack claims.
+pub fn resolve_file<'p>(
+    packs: &'p [Box<dyn Pack>],
+    path: &Path,
+) -> Option<(&'p dyn Pack, Grammar)> {
+    if path.extension().is_some() {
+        return resolve(packs, path);
+    }
+    let mut head = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(SHEBANG_LIMIT)
+        .read_to_end(&mut head)
+        .ok()?;
+    resolve_shebang(packs, &head)
+}
+
+/// Resolve a pack by the program the first line of `head` names — concern 13.
+pub fn resolve_shebang<'p>(
+    packs: &'p [Box<dyn Pack>],
+    head: &[u8],
+) -> Option<(&'p dyn Pack, Grammar)> {
+    let name = interpreter(head)?;
+    packs.iter().find_map(|p| {
+        p.interpreters()
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, g)| (p.as_ref(), *g))
+    })
+}
+
+/// Linux reads at most 256 bytes of a shebang line, so a longer one runs nothing either.
+const SHEBANG_LIMIT: u64 = 256;
+
+/// The program a shebang runs: `sh` for `#!/bin/sh`, and for `#!/usr/bin/env -S bash -e` the first
+/// argument to `env` that is neither a flag nor a variable assignment.
+fn interpreter(head: &[u8]) -> Option<&str> {
+    let line = head.strip_prefix(b"#!")?;
+    let line = &line[..line.iter().position(|&b| b == b'\n').unwrap_or(line.len())];
+    let mut words = std::str::from_utf8(line).ok()?.split_ascii_whitespace();
+    let program = words.next()?.rsplit('/').next()?;
+    if program != "env" {
+        return Some(program);
+    }
+    words.find(|w| !w.starts_with('-') && !w.contains('='))
 }
 
 pub fn analyse(
@@ -524,4 +575,29 @@ fn in_error_subtree(
     root.named_children(&mut cursor).any(|decl| {
         decl.start_byte() <= span.start && decl.end_byte() >= span.end && decl.has_error()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::interpreter;
+
+    #[test]
+    fn a_shebang_names_its_program_directly_or_through_env() {
+        assert_eq!(interpreter(b"#!/bin/sh\necho"), Some("sh"));
+        assert_eq!(interpreter(b"#! /bin/bash -eu\n"), Some("bash"));
+        assert_eq!(interpreter(b"#!/usr/bin/env bash\n"), Some("bash"));
+        assert_eq!(interpreter(b"#!/usr/bin/env -S bash -e\n"), Some("bash"));
+        assert_eq!(interpreter(b"#!/usr/bin/env LC_ALL=C sh"), Some("sh"));
+        assert_eq!(interpreter(b"#!/bin/sh\r\n"), Some("sh"));
+    }
+
+    #[test]
+    fn anything_else_names_no_program() {
+        assert_eq!(interpreter(b""), None);
+        assert_eq!(interpreter(b"# not a shebang\n"), None);
+        assert_eq!(interpreter(b"\n#!/bin/sh\n"), None);
+        assert_eq!(interpreter(b"#!\n"), None);
+        assert_eq!(interpreter(b"#!/usr/bin/env\n"), None);
+        assert_eq!(interpreter(b"#!\xff\xfe\n"), None);
+    }
 }
