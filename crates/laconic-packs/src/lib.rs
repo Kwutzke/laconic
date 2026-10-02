@@ -1,5 +1,6 @@
 //! The language packs. All per-language knowledge lives here.
 
+pub mod bash;
 pub mod common;
 pub mod go;
 #[cfg(test)]
@@ -22,5 +23,6 @@ pub fn all() -> Vec<Box<dyn Pack>> {
         Box::new(java::JavaPack),
         Box::new(typescript::TypeScriptPack),
         Box::new(swift::SwiftPack),
+        Box::new(bash::BashPack),
     ]
 }

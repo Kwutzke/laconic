@@ -200,6 +200,34 @@ fn set_mode(path: &Path, mode: u32) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).expect("chmod");
 }
 
+/// An extensionless script is claimed by its shebang, and `fix` rewrites it in place: a hook it
+/// edits is still a hook that runs.
+#[test]
+fn an_extensionless_script_is_linted_and_fixed_by_its_shebang() {
+    let dir = tempdir("shebang");
+    let hook = dir.join("pre-commit");
+    std::fs::write(&hook, "#!/bin/sh\nset -eu\n# Changed to use make.\nmake\n").expect("write");
+    set_mode(&hook, 0o755);
+
+    let run = laconic(&dir, &["check", "--no-config"]);
+    assert_eq!(run.code, 1, "stdout was {}", run.stdout);
+    assert!(
+        run.stdout.contains("pre-commit:3:1: gate [narration]"),
+        "{}",
+        run.stdout
+    );
+
+    let run = laconic(&dir, &["fix", "--no-config"]);
+    assert_eq!(run.code, 0, "stdout was {}", run.stdout);
+    assert_eq!(
+        std::fs::read_to_string(&hook).expect("read"),
+        "#!/bin/sh\nset -eu\nmake\n"
+    );
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(&hook).expect("stat").permissions().mode();
+    assert_eq!(mode & 0o777, 0o755, "fix dropped the executable bit");
+}
+
 /// A file laconic cannot read is named, and the run carries on over the rest.
 ///
 /// The opposite of the config aborts above, deliberately: a file is data and a config is

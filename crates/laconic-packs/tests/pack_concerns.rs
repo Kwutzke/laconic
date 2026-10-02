@@ -65,6 +65,8 @@ fn every_claimed_extension_resolves() {
         ("a.mts", "typescript"),
         ("a.cts", "typescript"),
         ("a.swift", "swift"),
+        ("a.sh", "bash"),
+        ("a.bash", "bash"),
     ];
     for (file, pack_name) in expected {
         let (pack, _) = resolve(&packs, Path::new(file)).unwrap_or_else(|| panic!("{file}"));
@@ -666,4 +668,103 @@ struct ContentView: View {
         .map(|f| f.line)
         .collect();
     assert!(density_lines.contains(&2), "{density_lines:?}");
+}
+
+/// Bash has no doc syntax, so position decides: the file's first prose run documents the file and
+/// a run directly above a function documents the function.
+#[test]
+fn a_bash_header_documents_the_file_and_a_run_above_a_function_documents_it() {
+    let src = "#!/bin/sh\n# Cleans the build directory.\nset -eu\n\n# Removes one target.\n# shellcheck disable=SC2086\nclean() {\n  rm -rf $1\n}\n\n# a note\nclean out\n";
+    let a = analyse_str("x.sh", src);
+
+    let file = block_with(&a, "Cleans the build");
+    assert_eq!(file.kind, CommentKind::Doc);
+    assert!(a.subjects[file.subject.expect("subject")].file_scope);
+
+    let function = block_with(&a, "Removes one target");
+    assert_eq!(function.kind, CommentKind::Doc);
+    assert!(!a.subjects[function.subject.expect("subject")].file_scope);
+
+    assert_eq!(block_with(&a, "a note").kind, CommentKind::Line);
+}
+
+/// A first run directly above a function is the function's, and a run after code is no header.
+#[test]
+fn a_bash_file_header_is_neither_a_function_header_nor_after_code() {
+    let a = analyse_str("x.sh", "#!/bin/sh\n# Builds it.\nbuild() {\n  make\n}\n");
+    let header = block_with(&a, "Builds it");
+    assert_eq!(header.kind, CommentKind::Doc);
+    assert!(!a.subjects[header.subject.expect("subject")].file_scope);
+
+    let a = analyse_str("x.sh", "set -eu\n\n# Not a header.\necho hi\n");
+    assert_eq!(block_with(&a, "Not a header").kind, CommentKind::Line);
+}
+
+/// `#` in a heredoc, a string or a parameter expansion is not a comment: the grammar decides.
+#[test]
+fn a_bash_hash_outside_a_comment_is_not_one() {
+    let src = "#!/bin/sh\necho \"a # b\" '# c' \"${x#y}\" $#\ncat <<EOF\n# d\nEOF\n";
+    assert!(analyse_str("x.sh", src).blocks.is_empty());
+}
+
+/// Shell parses any sentence as a command, so `commentedOutCode` needs shell syntax to fire.
+#[test]
+fn bash_commented_out_code_needs_shell_syntax() {
+    for code in [
+        "rm -rf \"$dir\"",
+        "rm -rf build",
+        "make build | tee log",
+        "x=$(date)",
+    ] {
+        let src = format!("echo start\n\n# {code}\n\necho end\n");
+        assert!(
+            rules_fired("x.sh", &src).contains(&"commentedOutCode"),
+            "{code:?} is code"
+        );
+    }
+    for prose in [
+        "The directory we clean up.",
+        "Build the image, then push it",
+        "HELPERS",
+        "`--config` rather than discovery: the tree holds no `laconic.toml`",
+        "Run `make -j` first",
+    ] {
+        let src = format!("echo start\n# {prose}\necho end\n");
+        assert!(
+            !rules_fired("x.sh", &src).contains(&"commentedOutCode"),
+            "{prose:?} is prose"
+        );
+    }
+}
+
+/// `restate` sees what a shell statement binds: an assignment's variable, a command's name. Each
+/// source opens with code, because a file's first comment is its header and `restate` skips docs.
+#[test]
+fn bash_restate_sees_variables_and_commands() {
+    let fired = |body: &str| rules_fired("x.sh", &format!("set -eu\n{body}"));
+    assert!(fired("# output dir\noutput_dir=/tmp\n").contains(&"restate"));
+    assert!(fired("# make\nmake\n").contains(&"restate"));
+    assert!(!fired("# Only on CI runners\nmake\n").contains(&"restate"));
+}
+
+/// An extensionless file resolves by its shebang and parses as the pack it names.
+#[test]
+fn an_extensionless_script_resolves_by_its_shebang() {
+    let packs = all();
+    for head in [
+        "#!/bin/sh\n",
+        "#!/bin/bash\n",
+        "#!/usr/bin/env bash\n",
+        "#!/usr/bin/env -S bash -e\n",
+    ] {
+        let (pack, _) = laconic_engine::resolve_shebang(&packs, head.as_bytes())
+            .unwrap_or_else(|| panic!("{head:?}"));
+        assert_eq!(pack.name(), "bash", "{head:?}");
+    }
+    for head in ["#!/usr/bin/env python3\n", "#!/bin/zsh\n", "echo hi\n"] {
+        assert!(
+            laconic_engine::resolve_shebang(&packs, head.as_bytes()).is_none(),
+            "{head:?}"
+        );
+    }
 }

@@ -139,6 +139,10 @@ fn fixture(ext: &str) -> (&'static str, &'static str) {
             "carveouts.swift",
             include_str!("../testdata/swift/carveouts.swift"),
         ),
+        "sh" => (
+            "carveouts.sh",
+            include_str!("../testdata/bash/carveouts.sh"),
+        ),
         other => panic!("no carve-out fixture for .{other}"),
     }
 }
@@ -242,15 +246,25 @@ fn swift_carve_outs() {
     each_carve_out_does_work("swift");
 }
 
+#[test]
+fn bash_carve_outs() {
+    every_prefix_is_exercised("sh");
+    each_carve_out_does_work("sh");
+}
+
 /// A generated file is excluded whole, and the same standard applies: without the marker the file
 /// is analysed normally.
 #[test]
 fn generated_markers_exclude_the_file() {
-    for ext in ["go", "py", "rs", "java", "ts", "swift"] {
+    for ext in ["go", "py", "rs", "java", "ts", "swift", "sh"] {
         let pack = pack_for(ext);
         let (name, src) = fixture(ext);
         let path = Path::new(name);
-        let comment = if ext == "py" { "#" } else { "//" };
+        let comment = if matches!(ext, "py" | "sh") {
+            "#"
+        } else {
+            "//"
+        };
         for marker in pack.generated_file_markers() {
             let generated = format!("{comment} {marker} by a tool\n{src}");
             assert!(

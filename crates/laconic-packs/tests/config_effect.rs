@@ -10,7 +10,7 @@ use laconic_engine::{
 use laconic_packs::all;
 use std::path::Path;
 
-const LANGUAGES: &[&str] = &["go", "python", "rust", "java", "typescript"];
+const LANGUAGES: &[&str] = &["go", "python", "rust", "java", "typescript", "bash"];
 
 /// Seven doc-comment lines on a one-member struct: over the shipped cap of six, and over the
 /// per-member ratio too, so both of `docbloat`'s arms fire under the defaults.
