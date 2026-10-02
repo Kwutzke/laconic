@@ -728,6 +728,10 @@ fn bash_commented_out_code_needs_shell_syntax() {
         "HELPERS",
         "`--config` rather than discovery: the tree holds no `laconic.toml`",
         "Run `make -j` first",
+        "A commit message mentioning --amend is message text, not a flag",
+        "$WORK is made a real git repository on a branch with a known name, because",
+        "Both writers have run by now: golangci-lint --fix, and gostandards",
+        "The parent transcript's layout: <session>.jsonl, with each subagent's beside it",
     ] {
         let src = format!("echo start\n# {prose}\necho end\n");
         assert!(

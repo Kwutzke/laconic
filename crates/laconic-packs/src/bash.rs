@@ -300,6 +300,9 @@ fn file_header<'t>(root: Node<'t>, src: &str) -> Option<Node<'t>> {
 /// Whether the tree of a comment body carries syntax a sentence does not: an expansion, a pipe, a
 /// redirect, an assignment, a compound command, or a `-flag` argument.
 pub(crate) fn is_code(root: Node, src: &str) -> bool {
+    if reads_as_prose(root, src) {
+        return false;
+    }
     let mut cursor = root.walk();
     let mut stack = vec![root];
     while let Some(n) = stack.pop() {
@@ -316,6 +319,27 @@ pub(crate) fn is_code(root: Node, src: &str) -> bool {
             && is_flag(&src[n.byte_range()])
         {
             return true;
+        }
+        stack.extend(n.named_children(&mut cursor));
+    }
+    false
+}
+
+/// Whether an argument ends a clause the way prose does — `here.`, `name,`, `Break:` — which a
+/// command's argument does not: `;` is an operator there, and `cd ..` ends in no letter.
+fn reads_as_prose(root: Node, src: &str) -> bool {
+    let mut cursor = root.walk();
+    let mut stack = vec![root];
+    while let Some(n) = stack.pop() {
+        if matches!(n.kind(), "word" | "concatenation") {
+            let mut tail = src[n.byte_range()].chars().rev();
+            if tail.next().is_some_and(|c| ".,:;!?".contains(c))
+                && tail
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || "\"'`)".contains(c))
+            {
+                return true;
+            }
         }
         stack.extend(n.named_children(&mut cursor));
     }
