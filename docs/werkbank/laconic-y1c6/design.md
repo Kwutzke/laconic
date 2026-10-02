@@ -47,9 +47,13 @@ file whose first line is a shebang naming `bash` or `sh`, directly (`#!/bin/sh`)
 
 ### From the charter
 
-1. **The pack interface changes once** (charter constraint 4). The new concern is that a pack
-   declares the interpreter names it claims. The engine matches them generically and never names
-   bash. After this work, any pack claims interpreters with no further engine change.
+1. **The pack interface gains two concerns, and no engine code names bash** (charter constraint 4).
+   The first: a pack declares the interpreter names it claims, and the engine matches them
+   generically. The second: a pack judges whether a comment fragment that parsed is code.
+   tree-sitter-bash parses a plain sentence such as `The directory we clean up.` as a command with
+   no error, so "it parsed" cannot mean "it is code" for shell. Both concerns default to today's
+   behaviour, so no existing pack changes, and after this work any pack can use either without a
+   further engine change.
 2. **Comments come from the parse tree** (charter constraint 2). The shebang is the only text read
    before parsing, it is read only to choose a pack, and it never produces a finding by being read.
 3. **Machine-parsed comments are exempt from day one, each with a negative test** (charter
@@ -102,8 +106,10 @@ file whose first line is a shebang naming `bash` or `sh`, directly (`#!/bin/sh`)
 6. **Doc comment** — bash has no doc syntax, so the pack assigns one, following the Google Shell
    Style Guide, which requires a file header and asks for a header on every function that is not
    both obvious and short:
-   - a comment run directly above a function, with no blank line between, documents that function;
-   - the first comment run after the shebang documents the file.
+   - a comment run directly above a function, with no blank line between, documents that function,
+     even when it is also the file's first run;
+   - otherwise, the first comment run documents the file, provided no code precedes it. The
+     shebang and machine directives in that run are not part of it.
 
    Every other comment is a line comment. The assignment decides which rules apply: `docbloat` and
    `implInInterface` judge only doc comments; `restate`, `commentedOutCode`, `attribution`,
@@ -115,16 +121,19 @@ file whose first line is a shebang naming `bash` or `sh`, directly (`#!/bin/sh`)
 1. **Grammars** gains bash: tree-sitter-bash 0.25.1, the official crate, MIT, ABI 15, compiled by
    `cc` from C sources like every other grammar, with a probe fixture. Verified to build against the
    workspace's `tree-sitter =0.26.12`.
-2. **The pack interface** gains interpreter claims: the names a pack claims. A pack that claims none
-   behaves exactly as it does today, so no existing pack changes.
+2. **The pack interface** gains interpreter claims, the names a pack claims, and a code judgment on
+   a parsed comment fragment. A pack that claims no interpreter and keeps the default judgment
+   behaves exactly as it does today, so no existing pack changes. The bash judgment counts a
+   fragment as code only when its tree carries shell syntax: a quote, an expansion, a pipe, a list
+   operator, a redirect, an assignment, or a `-flag` argument.
 3. **Resolution** in the engine becomes two steps: the extension claim, then, for a path with no
    extension, the interpreter claim. Reading the shebang and extracting the interpreter name —
    including the `env` form and its flags — belongs to the engine and is the same for every
    language. Packs declare names and nothing else.
 4. **The bash pack** owns what is bash: the comment kind, the directive carve-outs of constraint 3,
    the doc-comment assignment of domain 6, function subjects, underscore visibility, bound
-   identifiers (constraint 7), the statement wrapping `commentedOutCode` needs to parse a fragment,
-   and the blank-line policy `fix` applies.
+   identifiers (constraint 7), the code judgment `commentedOutCode` consults, and the blank-line
+   policy `fix` applies.
 5. **The test harnesses** run per-rule fixtures for any language, and resolve files the way the
    engine does, so extensionless test data is exercised by the same route production takes.
 
@@ -163,22 +172,24 @@ to.
 4. The shebang and every `# shellcheck` form produce no finding, and removing any one carve-out from
    the pack makes the bash carve-out fixture report a finding. *(§3.3)*
 5. A `#` inside a heredoc, a quoted string, `${x#prefix}` or `$#` never produces a finding. *(§3.2)*
-6. A comment run directly above a function, and the first comment run after the shebang, are judged
-   as doc comments; every other comment as a line comment. *(§4.6)*
-7. `restate` reports a comment whose words are only those of the bash function or variable it is
+6. A comment run directly above a function, and a first comment run that no code precedes, are
+   judged as doc comments; every other comment as a line comment. *(§4.6)*
+7. `commentedOutCode` reports `# rm -rf "$dir"` and `# rm -rf build`, and does not report a prose
+   comment such as `# Build the image, then push it`. *(§3.1)*
+8. `restate` reports a comment whose words are only those of the bash function or variable it is
    attached to. *(§3.7)*
-8. `laconic fix` on a bash file introduces no parse error, handles the blank lines around a removed
+9. `laconic fix` on a bash file introduces no parse error, handles the blank lines around a removed
    comment correctly, and leaves an executable file executable. *(§3.6; charter acceptance
    criterion 4)*
-9. Every rule has positive and negative bash fixtures under `testdata/bash/<rule>/`. *(§3.9)*
-10. laconic, `hooks/pre-commit` included, reports zero gate findings on itself with no ignore
+10. Every rule has positive and negative bash fixtures under `testdata/bash/<rule>/`. *(§3.9)*
+11. laconic, `hooks/pre-commit` included, reports zero gate findings on itself with no ignore
     directive added. *(§3.4)*
-11. A corpus run covers werkbank and personal-assistant's `bin/hz`: each gate rule's false-positive
+12. A corpus run covers werkbank and personal-assistant's `bin/hz`: each gate rule's false-positive
     bar is recorded before the run and cleared, and each warn rule's hit rate is recorded. *(charter
     acceptance criterion 3)*
-12. Packs that claim no interpreter behave as before, and no two shipped packs claim the same
-    interpreter or the same extension. *(§3.1, §7.2)*
-13. The README states which interpreters each pack claims and that an extensionless path resolves by
+13. Packs that claim no interpreter and keep the default code judgment behave as before, and no two
+    shipped packs claim the same interpreter or the same extension. *(§3.1, §7.2)*
+14. The README states which interpreters each pack claims and that an extensionless path resolves by
     its shebang. *(§3.8)*
 
 ## 9. Acceptance journey
