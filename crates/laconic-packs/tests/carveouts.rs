@@ -90,6 +90,9 @@ impl Pack for WithoutCarveOut {
     fn is_code(&self) -> fn(Node, &str) -> bool {
         self.inner.is_code()
     }
+    fn path_reference_extensions(&self) -> Vec<&'static str> {
+        self.inner.path_reference_extensions()
+    }
     fn bound_identifiers(&self, subject: Node, src: &str) -> Vec<String> {
         self.inner.bound_identifiers(subject, src)
     }

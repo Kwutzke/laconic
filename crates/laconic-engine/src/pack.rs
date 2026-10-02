@@ -1,4 +1,4 @@
-//! The pack interface: fourteen concerns, six declarations and eight strategies.
+//! The pack interface: fifteen concerns, seven declarations and eight strategies.
 //!
 //! What protects charter constraint 4 is this enumeration plus the trait being open — not a claim
 //! that per-language strategies collapse. A language whose strategy fits nothing already here
@@ -119,6 +119,12 @@ pub trait Pack {
     /// The default trusts the parse; a shell grammar parses any sentence as a command.
     fn is_code(&self) -> fn(Node, &str) -> bool {
         |_, _| true
+    }
+
+    /// Concern 15 — the extensions that make a path in a comment a reference `fileref` asks to
+    /// replace with a symbol. A shell script is named by its path, so a shell pack has none.
+    fn path_reference_extensions(&self) -> Vec<&'static str> {
+        self.extensions().iter().map(|(e, _)| *e).collect()
     }
 
     /// Concern 11 — every declaration in the file with its visibility, so `implInInterface` can

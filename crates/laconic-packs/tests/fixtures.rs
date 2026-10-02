@@ -131,10 +131,26 @@ fn fixture(language: &str, rule: &str, stem: &str) -> PathBuf {
 fn every_rule_has_a_positive_and_a_negative_fixture() {
     for language in languages() {
         for rule in RULES {
-            fixture(&language, rule, "positive");
+            if !cannot_fire(&language, rule) {
+                fixture(&language, rule, "positive");
+            }
             fixture(&language, rule, "negative");
         }
     }
+}
+
+/// Rules a pack switches off by declaration rather than by calibration, so no positive fixture can
+/// exist. Each still carries a negative, which is what shows it stays off.
+const CANNOT_FIRE: &[(&str, &str, &str)] = &[(
+    "bash",
+    "fileref",
+    "a shell script is named by its path, so the pack declares no path reference extensions",
+)];
+
+fn cannot_fire(language: &str, rule: &str) -> bool {
+    CANNOT_FIRE
+        .iter()
+        .any(|(l, r, _)| *l == language && *r == rule)
 }
 
 /// Every rule with a fixture directory. `ignoreReason` and `deadIgnore` are here too: they are
@@ -210,6 +226,7 @@ fn every_instruction_opens_with_the_change_to_make() {
     for (language, rule) in languages
         .iter()
         .flat_map(|l| RULES.iter().map(move |r| (l, r)))
+        .filter(|(l, r)| !cannot_fire(l, r))
     {
         let path = fixture(language, rule, "positive");
         for instruction in instructions(&path) {
@@ -226,7 +243,7 @@ fn every_instruction_opens_with_the_change_to_make() {
         }
     }
     assert!(
-        seen >= RULES.len() * languages.len(),
+        seen >= RULES.len() * languages.len() - CANNOT_FIRE.len(),
         "every rule contributed an instruction"
     );
 }

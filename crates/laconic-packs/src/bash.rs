@@ -191,6 +191,10 @@ impl Pack for BashPack {
         is_code
     }
 
+    fn path_reference_extensions(&self) -> Vec<&'static str> {
+        Vec::new()
+    }
+
     fn declared_symbols(&self, root: Node, src: &str) -> Vec<DeclaredSymbol> {
         let mut out = Vec::new();
         for f in declarations(CONTAINERS, root) {

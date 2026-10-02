@@ -1,5 +1,5 @@
 f() {
-  # see parse_args for the shape of the output
+  # runs after scripts/lint-go.sh, which leaves the tree formatted
   x=1
   echo "$x"
 

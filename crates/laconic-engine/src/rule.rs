@@ -41,8 +41,8 @@ pub struct BlockContext<'a> {
     pub subject: Option<&'a Subject>,
     /// Every declaration in the file — pack concern 11, for `implInInterface`.
     pub declared: &'a [DeclaredSymbol],
-    /// The extensions the pack claims — concern 1, for `fileref`. A list, not the pack: a rule that
-    /// held a pack would be a rule with a per-language branch in it.
+    /// The extensions that make a path a source reference — concern 15, for `fileref`. A list, not
+    /// the pack: a rule that held a pack would be a rule with a per-language branch in it.
     pub source_extensions: &'a [&'static str],
     /// The grammar this file was parsed with, so `commentedOutCode` can parse a comment body in the
     /// file's own language. Opaque to the rule: it parses, it does not branch on which language.

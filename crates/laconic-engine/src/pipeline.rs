@@ -30,8 +30,8 @@ pub struct FileAnalysis {
     /// `implInInterface` is suppressed for the whole file when this is set, because its input is
     /// file-scoped: a clean subtree says nothing about whether the enumeration is complete.
     pub has_error_nodes: bool,
-    /// The extensions the resolved pack claims — concern 1, which `fileref` needs to tell a source
-    /// path from an ordinary dotted word.
+    /// The extensions that make a path a source reference — concern 15, which `fileref` needs to
+    /// tell one from an ordinary dotted word.
     pub source_extensions: Vec<&'static str>,
     /// The grammar this file was parsed with, for `commentedOutCode`.
     pub grammar: Grammar,
@@ -327,7 +327,7 @@ pub fn analyse(
         declared: pack.declared_symbols(root, src),
         has_error_nodes: has_error_nodes(root),
         unbound_directives,
-        source_extensions: pack.extensions().iter().map(|(e, _)| *e).collect(),
+        source_extensions: pack.path_reference_extensions(),
         grammar,
         statement_scaffold: pack.statement_scaffold(),
         is_code: pack.is_code(),
