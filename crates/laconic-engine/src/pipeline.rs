@@ -38,6 +38,8 @@ pub struct FileAnalysis {
     /// What wraps a statement fragment so it parses — concern 12, also `commentedOutCode`. Carried
     /// as data rather than as the pack, for the reason `source_extensions` is.
     pub statement_scaffold: Option<(&'static str, &'static str)>,
+    /// Whether a clean parse of a comment body is code — concern 14, also `commentedOutCode`.
+    pub is_code: fn(Node, &str) -> bool,
     /// Directives that bound to no block.
     ///
     /// Kept rather than dropped: `ignoreReason` fires on a directive lacking a reason, and a
@@ -328,6 +330,7 @@ pub fn analyse(
         source_extensions: pack.extensions().iter().map(|(e, _)| *e).collect(),
         grammar,
         statement_scaffold: pack.statement_scaffold(),
+        is_code: pack.is_code(),
     })
 }
 

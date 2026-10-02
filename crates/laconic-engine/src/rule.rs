@@ -50,6 +50,8 @@ pub struct BlockContext<'a> {
     /// What wraps a statement fragment so it parses — concern 12, for `commentedOutCode`. A pair of
     /// strings rather than the pack: a rule holding a pack is a rule with a per-language branch.
     pub statement_scaffold: Option<(&'static str, &'static str)>,
+    /// Whether a clean parse of a body is code — concern 14, for `commentedOutCode`.
+    pub is_code: fn(tree_sitter::Node, &str) -> bool,
     /// The numeric thresholds for **this file's language**, already narrowed by any override.
     ///
     /// Per file rather than per run, and that is the language-override mechanism rather than a

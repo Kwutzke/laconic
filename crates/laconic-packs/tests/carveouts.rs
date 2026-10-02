@@ -84,6 +84,15 @@ impl Pack for WithoutCarveOut {
     fn declared_symbols(&self, root: Node, src: &str) -> Vec<DeclaredSymbol> {
         self.inner.declared_symbols(root, src)
     }
+    fn statement_scaffold(&self) -> Option<(&'static str, &'static str)> {
+        self.inner.statement_scaffold()
+    }
+    fn is_code(&self) -> fn(Node, &str) -> bool {
+        self.inner.is_code()
+    }
+    fn bound_identifiers(&self, subject: Node, src: &str) -> Vec<String> {
+        self.inner.bound_identifiers(subject, src)
+    }
 }
 
 fn pack_for(ext: &str) -> Box<dyn Pack> {

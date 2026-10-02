@@ -1,4 +1,4 @@
-//! The pack interface: thirteen concerns, six declarations and seven strategies.
+//! The pack interface: fourteen concerns, six declarations and eight strategies.
 //!
 //! What protects charter constraint 4 is this enumeration plus the trait being open — not a claim
 //! that per-language strategies collapse. A language whose strategy fits nothing already here
@@ -113,6 +113,12 @@ pub trait Pack {
     /// default, so a new pack misses findings rather than inventing them.
     fn statement_scaffold(&self) -> Option<(&'static str, &'static str)> {
         None
+    }
+
+    /// Concern 14 — whether a comment body that parsed cleanly is code, for `commentedOutCode`.
+    /// The default trusts the parse; a shell grammar parses any sentence as a command.
+    fn is_code(&self) -> fn(Node, &str) -> bool {
+        |_, _| true
     }
 
     /// Concern 11 — every declaration in the file with its visibility, so `implInInterface` can

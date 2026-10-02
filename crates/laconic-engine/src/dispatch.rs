@@ -87,6 +87,7 @@ pub fn dispatch(
                 source_extensions: &analysis.source_extensions,
                 grammar: analysis.grammar,
                 statement_scaffold: analysis.statement_scaffold,
+                is_code: analysis.is_code,
                 thresholds: resolved.thresholds,
                 src,
             };
