@@ -149,7 +149,9 @@ and a line per `.json` would make the findings unreadable.
 Bash has no doc syntax, so position decides. A comment run directly above a function documents it,
 and otherwise the file's first comment run documents the file when no code precedes it. Shell parses
 any sentence as a command, so `commentedOutCode` fires on a bash comment only where it carries shell
-syntax: an expansion, a pipe, a redirect, an assignment or a `-flag`.
+syntax: an expansion, a pipe, a redirect, an assignment or a `-flag`, and never where an argument
+ends a clause the way prose does. `fileref` does not fire in a bash file: a script is named by its
+path, so there is no symbol to replace one with.
 
 Comments come from the parse tree, never from a regex over raw bytes, which would match inside
 string literals. Which node types carry comments is a pack's business: there is no node type common
