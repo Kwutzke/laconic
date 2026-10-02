@@ -176,7 +176,8 @@ fn an_unclaimed_extension_is_silent() {
 
 /// An extensionless file is claimed by its shebang or not at all, and every way of not being claimed
 /// is as silent as an unclaimed extension: no shebang, an interpreter no pack claims, binary
-/// content, a file that cannot be opened. A shebang does not override an extension either.
+/// content, a file that cannot be opened, a FIFO that would block the open. A shebang does not
+/// override an extension either.
 #[test]
 fn an_extensionless_file_no_shebang_claims_is_silent() {
     let dir = tempdir("unclaimed-shebang");
@@ -188,9 +189,20 @@ fn an_extensionless_file_no_shebang_claims_is_silent() {
     let locked = dir.join("locked");
     std::fs::write(&locked, "#!/bin/sh\n# ======== \n").expect("write");
     set_mode(&locked, 0o000);
+    // Root opens a mode-000 file anyway, and then it is simply a claimed script.
+    if std::fs::File::open(&locked).is_ok() {
+        std::fs::remove_file(&locked).expect("remove");
+    }
+    let made = Command::new("mkfifo")
+        .arg(dir.join("pipe"))
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success());
 
     let run = laconic(&dir, &["check", "--no-config"]);
-    set_mode(&locked, 0o644);
+    if locked.exists() {
+        set_mode(&locked, 0o644);
+    }
     assert_eq!(run.code, 0, "stderr was {}", run.stderr);
     assert_eq!(run.stdout, "", "an unclaimed file produced output");
 }
@@ -228,7 +240,7 @@ fn an_extensionless_script_is_linted_and_fixed_by_its_shebang() {
     assert_eq!(mode & 0o777, 0o755, "fix dropped the executable bit");
 }
 
-/// A file laconic cannot read is named, and the run carries on over the rest.
+/// A file a pack claims and laconic cannot read is named, and the run carries on over the rest.
 ///
 /// The opposite of the config aborts above, deliberately: a file is data and a config is
 /// instructions. So this reports per file rather than stopping, and the finding on the file beside

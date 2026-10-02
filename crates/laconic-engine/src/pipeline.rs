@@ -70,14 +70,18 @@ pub fn resolve<'p>(packs: &'p [Box<dyn Pack>], path: &Path) -> Option<(&'p dyn P
 
 /// Resolve a pack for a file on disk — concern 1, then concern 13 for a path with no extension.
 ///
-/// The extension decides whenever there is one, so only an extensionless file is opened here, and
-/// a file that cannot be read is skipped like one no pack claims.
+/// The extension decides whenever there is one, so only an extensionless regular file is opened
+/// here — a FIFO would block the open — and one that cannot be read is skipped like one no pack
+/// claims.
 pub fn resolve_file<'p>(
     packs: &'p [Box<dyn Pack>],
     path: &Path,
 ) -> Option<(&'p dyn Pack, Grammar)> {
     if path.extension().is_some() {
         return resolve(packs, path);
+    }
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
     }
     let mut head = Vec::new();
     std::fs::File::open(path)
@@ -102,11 +106,11 @@ pub fn resolve_shebang<'p>(
     })
 }
 
-/// Linux reads at most 256 bytes of a shebang line, so a longer one runs nothing either.
+/// Linux reads at most 256 bytes of a shebang line, and the program it runs is named within them.
 const SHEBANG_LIMIT: u64 = 256;
 
 /// The program a shebang runs: `sh` for `#!/bin/sh`, and for `#!/usr/bin/env -S bash -e` the first
-/// argument to `env` that is neither a flag nor a variable assignment.
+/// argument to `env` that is neither a flag, a flag's own argument, nor a variable assignment.
 fn interpreter(head: &[u8]) -> Option<&str> {
     let line = head.strip_prefix(b"#!")?;
     let line = &line[..line.iter().position(|&b| b == b'\n').unwrap_or(line.len())];
@@ -115,8 +119,18 @@ fn interpreter(head: &[u8]) -> Option<&str> {
     if program != "env" {
         return Some(program);
     }
-    words.find(|w| !w.starts_with('-') && !w.contains('='))
+    while let Some(word) = words.next() {
+        if ENV_OPTIONS_WITH_ARGUMENT.contains(&word) {
+            words.next();
+        } else if !word.starts_with('-') && !word.contains('=') {
+            return Some(word);
+        }
+    }
+    None
 }
+
+/// `env -u NAME`, `env -C DIR` and `env -P PATH` take the next word as their own.
+const ENV_OPTIONS_WITH_ARGUMENT: &[&str] = &["-u", "-C", "-P"];
 
 pub fn analyse(
     pack: &dyn Pack,
@@ -591,6 +605,11 @@ mod tests {
         assert_eq!(interpreter(b"#!/usr/bin/env bash\n"), Some("bash"));
         assert_eq!(interpreter(b"#!/usr/bin/env -S bash -e\n"), Some("bash"));
         assert_eq!(interpreter(b"#!/usr/bin/env LC_ALL=C sh"), Some("sh"));
+        assert_eq!(
+            interpreter(b"#!/usr/bin/env -u GIT_DIR bash\n"),
+            Some("bash")
+        );
+        assert_eq!(interpreter(b"#!/usr/bin/env -C /tmp sh\n"), Some("sh"));
         assert_eq!(interpreter(b"#!/bin/sh\r\n"), Some("sh"));
     }
 

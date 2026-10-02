@@ -52,16 +52,22 @@ impl Config {
     /// pkg.go.dev surface with it.
     ///
     pub fn is_licence_header(&self, block: &CommentBlock) -> bool {
-        const MARKERS: &[&str] = &[
-            "copyright",
-            "licence",
-            "license",
-            "spdx-license-identifier",
-            "all rights reserved",
-        ];
-        block.body().lines().any(|line| {
-            let line = line.trim_start().to_lowercase();
-            MARKERS.iter().any(|m| line.starts_with(m))
-        })
+        is_licence_text(&block.body())
     }
+}
+
+/// Whether comment text reads as a licence or copyright notice: a line opens with a marker. A pack
+/// that decides doc comments by position asks this too, so a notice never becomes the file's doc.
+pub fn is_licence_text(body: &str) -> bool {
+    const MARKERS: &[&str] = &[
+        "copyright",
+        "licence",
+        "license",
+        "spdx-license-identifier",
+        "all rights reserved",
+    ];
+    body.lines().any(|line| {
+        let line = line.trim_start().to_lowercase();
+        MARKERS.iter().any(|m| line.starts_with(m))
+    })
 }

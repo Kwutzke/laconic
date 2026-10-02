@@ -39,7 +39,7 @@ pub struct WithheldNote {
     pub rules: Vec<&'static str>,
 }
 
-/// A file that could not be read at all. Reported per file; the run continues over the rest.
+/// A file a pack claims that could not be read. Reported per file; the run continues over the rest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnreadableFile {
     pub file: PathBuf,
