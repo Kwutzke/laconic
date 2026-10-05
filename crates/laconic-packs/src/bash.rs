@@ -9,6 +9,7 @@
 use crate::common::{Container, Excluded, alone_on_its_line, count_members, declarations};
 use laconic_engine::domain::{CommentKind, DeclaredSymbol, Visibility};
 use laconic_engine::exclude::is_licence_text;
+use laconic_engine::is_shebang;
 use laconic_engine::pack::{BlankLinePolicy, DocComment, Pack, split_identifier};
 use laconic_grammars::Grammar;
 use tree_sitter::Node;
@@ -17,9 +18,8 @@ const EXTENSIONS: &[(&str, Grammar)] = &[("sh", Grammar::Bash), ("bash", Grammar
 const INTERPRETERS: &[(&str, Grammar)] = &[("bash", Grammar::Bash), ("sh", Grammar::Bash)];
 pub(crate) const COMMENT_KINDS: &[&str] = &["comment"];
 
-/// Concern 3, matched against the body after `#`, anywhere in the file. `!/` is the shebang, which
-/// always names a path; a bare `!` would take `# !!! Changed to …` with it.
-const MACHINE_DIRECTIVES: &[&str] = &["!/", "shellcheck "];
+/// Concern 3, matched against the body after `#`. The shebang is the engine's, by position.
+const MACHINE_DIRECTIVES: &[&str] = &["shellcheck "];
 
 /// With the comment leader, because the markers are matched on raw text and a generator script
 /// writes the bare ones into the file it generates.
@@ -259,7 +259,7 @@ fn body<'s>(node: Node, src: &'s str) -> &'s str {
 
 fn is_directive(node: Node, src: &str) -> bool {
     let trimmed = body(node, src).trim_start();
-    MACHINE_DIRECTIVES.iter().any(|p| trimmed.starts_with(p))
+    is_shebang(node.start_byte(), src) || MACHINE_DIRECTIVES.iter().any(|p| trimmed.starts_with(p))
 }
 
 /// The nearest prose comment in the run directly above `function`, walking over directives.

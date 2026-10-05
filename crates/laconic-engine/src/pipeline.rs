@@ -223,7 +223,7 @@ pub fn analyse(
         let mut comments: Vec<Comment> = Vec::new();
         for &i in &run {
             let (node, comment) = &all[i];
-            if is_machine_directive(pack, &comment.body) {
+            if is_shebang(comment.span.start, src) || is_machine_directive(pack, &comment.body) {
                 continue;
             }
             match parse_ignore_directive(comment) {
@@ -377,6 +377,12 @@ fn is_generated(pack: &dyn Pack, src: &str) -> bool {
     pack.generated_file_markers()
         .iter()
         .any(|m| head.contains(m))
+}
+
+/// Whether a comment starting at `start` is the shebang. That is the kernel's convention, not a
+/// language's: `#!` opening the file, whatever follows it — `#! /bin/sh` included.
+pub fn is_shebang(start: usize, src: &str) -> bool {
+    start == 0 && src.starts_with("#!")
 }
 
 fn is_machine_directive(pack: &dyn Pack, body: &str) -> bool {

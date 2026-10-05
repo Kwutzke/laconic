@@ -767,11 +767,20 @@ fn bash_restate_sees_variables_and_commands() {
     );
 }
 
-/// The shebang carve-out is `!/`, so prose that opens with `!` is still judged.
+/// The shebang is known by position, so prose that opens with `!` is still judged, and a shebang
+/// with a space after `#!` is still a shebang.
 #[test]
 fn a_bash_comment_opening_with_a_bang_is_not_a_shebang() {
     let fired = rules_fired("x.sh", "set -eu\n# !!! Changed to use rsync\nrsync a b\n");
     assert!(fired.contains(&"narration"), "{fired:?}");
+
+    for shebang in ["#! /bin/sh", "#!/bin/sh"] {
+        let src = format!("{shebang}\n# Deploys the app.\nset -e\n");
+        assert!(rules_fired("x.sh", &src).is_empty(), "{shebang:?}");
+        let a = analyse_str("x.sh", &src);
+        assert_eq!(a.blocks.len(), 1, "{shebang:?}");
+        assert_eq!(block_with(&a, "Deploys the app").kind, CommentKind::Doc);
+    }
 }
 
 /// A generator writes the bare markers into its output; only a marker in a shell comment marks the
@@ -816,4 +825,12 @@ fn an_extensionless_script_resolves_by_its_shebang() {
             "{head:?}"
         );
     }
+}
+
+/// Python's shebang is the engine's too, so a comment opening with `!` is prose like any other.
+#[test]
+fn a_python_comment_opening_with_a_bang_is_not_a_shebang() {
+    let fired = rules_fired("x.py", "import os\n\n# !!! changed to use a map\nx = 1\n");
+    assert!(fired.contains(&"narration"), "{fired:?}");
+    assert!(rules_fired("x.py", "#!/usr/bin/env python3\nimport os\n").is_empty());
 }
