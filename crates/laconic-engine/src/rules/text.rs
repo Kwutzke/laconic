@@ -300,7 +300,7 @@ impl BlockRule for FileRef {
         "fileref"
     }
 
-    /// A source-file path per the pack's extension list — concern 1. The instruction names the
+    /// A source-file path per the pack's path reference extensions — concern 15. The instruction names the
     /// alternative, because the consumer acts on the diagnostic alone.
     ///
     /// No code-span carve-out here, unlike the deny-list rules. Backticks around a deny-list term

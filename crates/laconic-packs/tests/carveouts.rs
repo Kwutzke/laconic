@@ -48,6 +48,9 @@ impl Pack for WithoutCarveOut {
     fn extensions(&self) -> &[(&'static str, Grammar)] {
         self.inner.extensions()
     }
+    fn interpreters(&self) -> &[(&'static str, Grammar)] {
+        self.inner.interpreters()
+    }
     fn comment_node_kinds(&self, grammar: Grammar) -> &[&'static str] {
         self.inner.comment_node_kinds(grammar)
     }
@@ -80,6 +83,18 @@ impl Pack for WithoutCarveOut {
     }
     fn declared_symbols(&self, root: Node, src: &str) -> Vec<DeclaredSymbol> {
         self.inner.declared_symbols(root, src)
+    }
+    fn statement_scaffold(&self) -> Option<(&'static str, &'static str)> {
+        self.inner.statement_scaffold()
+    }
+    fn is_code(&self) -> fn(Node, &str) -> bool {
+        self.inner.is_code()
+    }
+    fn path_reference_extensions(&self) -> Vec<&'static str> {
+        self.inner.path_reference_extensions()
+    }
+    fn bound_identifiers(&self, subject: Node, src: &str) -> Vec<String> {
+        self.inner.bound_identifiers(subject, src)
     }
 }
 
@@ -126,6 +141,10 @@ fn fixture(ext: &str) -> (&'static str, &'static str) {
         "swift" => (
             "carveouts.swift",
             include_str!("../testdata/swift/carveouts.swift"),
+        ),
+        "sh" => (
+            "carveouts.sh",
+            include_str!("../testdata/bash/carveouts.sh"),
         ),
         other => panic!("no carve-out fixture for .{other}"),
     }
@@ -230,15 +249,25 @@ fn swift_carve_outs() {
     each_carve_out_does_work("swift");
 }
 
+#[test]
+fn bash_carve_outs() {
+    every_prefix_is_exercised("sh");
+    each_carve_out_does_work("sh");
+}
+
 /// A generated file is excluded whole, and the same standard applies: without the marker the file
 /// is analysed normally.
 #[test]
 fn generated_markers_exclude_the_file() {
-    for ext in ["go", "py", "rs", "java", "ts", "swift"] {
+    for ext in ["go", "py", "rs", "java", "ts", "swift", "sh"] {
         let pack = pack_for(ext);
         let (name, src) = fixture(ext);
         let path = Path::new(name);
-        let comment = if ext == "py" { "#" } else { "//" };
+        let comment = if matches!(ext, "py" | "sh") {
+            "#"
+        } else {
+            "//"
+        };
         for marker in pack.generated_file_markers() {
             let generated = format!("{comment} {marker} by a tool\n{src}");
             assert!(

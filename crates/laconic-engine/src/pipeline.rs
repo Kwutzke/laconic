@@ -1,6 +1,6 @@
 //! The per-file pipeline, from a path to blocks that are ready to dispatch.
 //!
-//! `resolve pack by extension → parse → extract comment nodes → group into runs → drop machine
+//! `resolve pack by extension, or by shebang without one → parse → extract comment nodes → group into runs → drop machine
 //! directives and lift out ignore directives within each run → resolve attachment, kind and
 //! subject → drop excluded regions`.
 //!
@@ -15,6 +15,7 @@ use crate::domain::{
 use crate::exclude::Config;
 use crate::pack::Pack;
 use laconic_grammars::Grammar;
+use std::io::Read;
 use std::ops::Range;
 use std::path::Path;
 use tree_sitter::Node;
@@ -29,14 +30,16 @@ pub struct FileAnalysis {
     /// `implInInterface` is suppressed for the whole file when this is set, because its input is
     /// file-scoped: a clean subtree says nothing about whether the enumeration is complete.
     pub has_error_nodes: bool,
-    /// The extensions the resolved pack claims — concern 1, which `fileref` needs to tell a source
-    /// path from an ordinary dotted word.
+    /// The extensions that make a path a source reference — concern 15, which `fileref` needs to
+    /// tell one from an ordinary dotted word.
     pub source_extensions: Vec<&'static str>,
     /// The grammar this file was parsed with, for `commentedOutCode`.
     pub grammar: Grammar,
     /// What wraps a statement fragment so it parses — concern 12, also `commentedOutCode`. Carried
     /// as data rather than as the pack, for the reason `source_extensions` is.
     pub statement_scaffold: Option<(&'static str, &'static str)>,
+    /// Whether a clean parse of a comment body is code — concern 14, also `commentedOutCode`.
+    pub is_code: fn(Node, &str) -> bool,
     /// Directives that bound to no block.
     ///
     /// Kept rather than dropped: `ignoreReason` fires on a directive lacking a reason, and a
@@ -64,6 +67,70 @@ pub fn resolve<'p>(packs: &'p [Box<dyn Pack>], path: &Path) -> Option<(&'p dyn P
             .map(|(_, g)| (p.as_ref(), *g))
     })
 }
+
+/// Resolve a pack for a file on disk — concern 1, then concern 13 for a path with no extension.
+///
+/// The extension decides whenever there is one, so only an extensionless regular file is opened
+/// here — a FIFO would block the open — and one that cannot be read is skipped like one no pack
+/// claims.
+pub fn resolve_file<'p>(
+    packs: &'p [Box<dyn Pack>],
+    path: &Path,
+) -> Option<(&'p dyn Pack, Grammar)> {
+    if path.extension().is_some() {
+        return resolve(packs, path);
+    }
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
+    let mut head = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(SHEBANG_LIMIT)
+        .read_to_end(&mut head)
+        .ok()?;
+    resolve_shebang(packs, &head)
+}
+
+/// Resolve a pack by the program the first line of `head` names — concern 13.
+pub fn resolve_shebang<'p>(
+    packs: &'p [Box<dyn Pack>],
+    head: &[u8],
+) -> Option<(&'p dyn Pack, Grammar)> {
+    let name = interpreter(head)?;
+    packs.iter().find_map(|p| {
+        p.interpreters()
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, g)| (p.as_ref(), *g))
+    })
+}
+
+/// Linux reads at most 256 bytes of a shebang line, and the program it runs is named within them.
+const SHEBANG_LIMIT: u64 = 256;
+
+/// The program a shebang runs: `sh` for `#!/bin/sh`, and for `#!/usr/bin/env -S bash -e` the first
+/// argument to `env` that is neither a flag, a flag's own argument, nor a variable assignment.
+fn interpreter(head: &[u8]) -> Option<&str> {
+    let line = head.strip_prefix(b"#!")?;
+    let line = &line[..line.iter().position(|&b| b == b'\n').unwrap_or(line.len())];
+    let mut words = std::str::from_utf8(line).ok()?.split_ascii_whitespace();
+    let program = words.next()?.rsplit('/').next()?;
+    if program != "env" {
+        return Some(program);
+    }
+    while let Some(word) = words.next() {
+        if ENV_OPTIONS_WITH_ARGUMENT.contains(&word) {
+            words.next();
+        } else if !word.starts_with('-') && !word.contains('=') {
+            return Some(word);
+        }
+    }
+    None
+}
+
+/// `env -u NAME`, `env -C DIR` and `env -P PATH` take the next word as their own.
+const ENV_OPTIONS_WITH_ARGUMENT: &[&str] = &["-u", "-C", "-P"];
 
 pub fn analyse(
     pack: &dyn Pack,
@@ -156,7 +223,7 @@ pub fn analyse(
         let mut comments: Vec<Comment> = Vec::new();
         for &i in &run {
             let (node, comment) = &all[i];
-            if is_machine_directive(pack, &comment.body) {
+            if is_shebang(comment.span.start, src) || is_machine_directive(pack, &comment.body) {
                 continue;
             }
             match parse_ignore_directive(comment) {
@@ -274,9 +341,10 @@ pub fn analyse(
         declared: pack.declared_symbols(root, src),
         has_error_nodes: has_error_nodes(root),
         unbound_directives,
-        source_extensions: pack.extensions().iter().map(|(e, _)| *e).collect(),
+        source_extensions: pack.path_reference_extensions(),
         grammar,
         statement_scaffold: pack.statement_scaffold(),
+        is_code: pack.is_code(),
     })
 }
 
@@ -309,6 +377,12 @@ fn is_generated(pack: &dyn Pack, src: &str) -> bool {
     pack.generated_file_markers()
         .iter()
         .any(|m| head.contains(m))
+}
+
+/// Whether a comment starting at `start` is the shebang. That is the kernel's convention, not a
+/// language's: `#!` opening the file, whatever follows it — `#! /bin/sh` included.
+pub fn is_shebang(start: usize, src: &str) -> bool {
+    start == 0 && src.starts_with("#!")
 }
 
 fn is_machine_directive(pack: &dyn Pack, body: &str) -> bool {
@@ -524,4 +598,34 @@ fn in_error_subtree(
     root.named_children(&mut cursor).any(|decl| {
         decl.start_byte() <= span.start && decl.end_byte() >= span.end && decl.has_error()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::interpreter;
+
+    #[test]
+    fn a_shebang_names_its_program_directly_or_through_env() {
+        assert_eq!(interpreter(b"#!/bin/sh\necho"), Some("sh"));
+        assert_eq!(interpreter(b"#! /bin/bash -eu\n"), Some("bash"));
+        assert_eq!(interpreter(b"#!/usr/bin/env bash\n"), Some("bash"));
+        assert_eq!(interpreter(b"#!/usr/bin/env -S bash -e\n"), Some("bash"));
+        assert_eq!(interpreter(b"#!/usr/bin/env LC_ALL=C sh"), Some("sh"));
+        assert_eq!(
+            interpreter(b"#!/usr/bin/env -u GIT_DIR bash\n"),
+            Some("bash")
+        );
+        assert_eq!(interpreter(b"#!/usr/bin/env -C /tmp sh\n"), Some("sh"));
+        assert_eq!(interpreter(b"#!/bin/sh\r\n"), Some("sh"));
+    }
+
+    #[test]
+    fn anything_else_names_no_program() {
+        assert_eq!(interpreter(b""), None);
+        assert_eq!(interpreter(b"# not a shebang\n"), None);
+        assert_eq!(interpreter(b"\n#!/bin/sh\n"), None);
+        assert_eq!(interpreter(b"#!\n"), None);
+        assert_eq!(interpreter(b"#!/usr/bin/env\n"), None);
+        assert_eq!(interpreter(b"#!\xff\xfe\n"), None);
+    }
 }

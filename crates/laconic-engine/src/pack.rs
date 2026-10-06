@@ -1,4 +1,4 @@
-//! The pack interface: twelve concerns, five declarations and seven strategies.
+//! The pack interface: fifteen concerns, seven declarations and eight strategies.
 //!
 //! What protects charter constraint 4 is this enumeration plus the trait being open — not a claim
 //! that per-language strategies collapse. A language whose strategy fits nothing already here
@@ -43,6 +43,12 @@ pub trait Pack {
     /// Per extension rather than per pack: TypeScript, TSX and JavaScript are three grammars behind
     /// one TS/JS pack.
     fn extensions(&self) -> &[(&'static str, Grammar)];
+
+    /// Concern 13 — the programs a shebang may name for this pack, consulted only for a path with
+    /// no extension: a hook or a `bin/` script says what it is on its first line and nowhere else.
+    fn interpreters(&self) -> &[(&'static str, Grammar)] {
+        &[]
+    }
 
     /// Concern 2 — which node types carry comments in this grammar. No type is common to all
     /// grammars, so this cannot be an engine constant.
@@ -107,6 +113,18 @@ pub trait Pack {
     /// default, so a new pack misses findings rather than inventing them.
     fn statement_scaffold(&self) -> Option<(&'static str, &'static str)> {
         None
+    }
+
+    /// Concern 14 — whether a comment body that parsed cleanly is code, for `commentedOutCode`.
+    /// The default trusts the parse; a shell grammar parses any sentence as a command.
+    fn is_code(&self) -> fn(Node, &str) -> bool {
+        |_, _| true
+    }
+
+    /// Concern 15 — the extensions that make a path in a comment a reference `fileref` asks to
+    /// replace with a symbol. A shell script is named by its path, so a shell pack has none.
+    fn path_reference_extensions(&self) -> Vec<&'static str> {
+        self.extensions().iter().map(|(e, _)| *e).collect()
     }
 
     /// Concern 11 — every declaration in the file with its visibility, so `implInInterface` can

@@ -10,7 +10,7 @@ use crate::dispatch::{Rules, dispatch};
 use crate::exclude::Config;
 use crate::fix::fix;
 use crate::pack::Pack;
-use crate::pipeline::{analyse, resolve};
+use crate::pipeline::{analyse, resolve_file};
 use crate::report::{Report, UnreadableFile};
 use crate::rules::{all_block_rules, all_subject_rules};
 use std::collections::BTreeMap;
@@ -84,7 +84,7 @@ impl<'p> Run<'p> {
     /// `Some(true)` when the file was rewritten, `Some(false)` when it needed nothing, `None` when
     /// it was skipped or unreadable — all three of which the following check pass reports on.
     fn fix_file(&self, file: &Path) -> Option<bool> {
-        let (pack, grammar) = resolve(self.packs, file)?;
+        let (pack, grammar) = resolve_file(self.packs, file)?;
         let resolved = self.resolved.get(pack.name())?;
         let src = std::fs::read_to_string(file).ok()?;
         let analysis = analyse(pack, grammar, file, &src, &self.exclude).ok()?;
@@ -98,9 +98,9 @@ impl<'p> Run<'p> {
     }
 
     fn check_file(&self, file: &Path, report: &mut Report) {
-        // An extension no pack claims is not an error and produces no output. laconic runs over
-        // whole repositories, and a line per `.json` and `.md` makes the findings unreadable.
-        let Some((pack, grammar)) = resolve(self.packs, file) else {
+        // A file no pack claims is not an error and produces no output. laconic runs over whole
+        // repositories, and a line per `.json` and `.md` makes the findings unreadable.
+        let Some((pack, grammar)) = resolve_file(self.packs, file) else {
             return;
         };
         let Some(resolved) = self.resolved.get(pack.name()) else {

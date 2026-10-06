@@ -184,7 +184,7 @@ impl BlockRule for CommentedOutCode {
         //
         // The scaffold is the pack's, not this rule's — concern 12. Where a pack states none,
         // statements already parse at the top level and the first attempt was the whole test.
-        let counted = parses_as_code(ctx.grammar, &body).or_else(|| {
+        let counted = parses_as_code(ctx.grammar, &body, ctx.is_code).or_else(|| {
             // The scaffold path is gated on punctuation, and the gate is not optional. Inside a
             // function body almost any bare word is a valid expression statement, so wrapping makes
             // the grammar *more* permissive than the bare parse rather than less: `// HELPERS`,
@@ -194,7 +194,7 @@ impl BlockRule for CommentedOutCode {
             // Real statements carry an operator or a bracket; prose does not. This is the whole
             // difference between the fragment the rule is here for and a section label.
             has_code_punctuation(&body)
-                .then(|| scaffolded(ctx.grammar, &body, ctx.statement_scaffold?))
+                .then(|| scaffolded(ctx.grammar, &body, ctx.statement_scaffold?, ctx.is_code))
                 .flatten()
         })?;
         if counted < MIN_CODE_NODES {
@@ -215,15 +215,20 @@ fn has_code_punctuation(body: &str) -> bool {
     body.contains(['=', '(', ')', '{', '}', '[', ']', ';'])
 }
 
-/// The named-node count of `text`, or `None` where it does not parse cleanly.
+/// The named-node count of `text`, or `None` where it does not parse cleanly or its pack does not
+/// read the tree as code.
 ///
 /// `has_error` rather than a walk counting ERROR nodes. A body can parse to a clean-looking tree
 /// with a MISSING node that no traversal of `children` reaches — a bare identifier does exactly
 /// that — and only this reports it.
-fn parses_as_code(grammar: laconic_grammars::Grammar, text: &str) -> Option<usize> {
+fn parses_as_code(
+    grammar: laconic_grammars::Grammar,
+    text: &str,
+    is_code: fn(tree_sitter::Node, &str) -> bool,
+) -> Option<usize> {
     let tree = grammar.parser().parse(text, None)?;
     let root = tree.root_node();
-    (!root.has_error()).then(|| named_nodes(root))
+    (!root.has_error() && is_code(root, text)).then(|| named_nodes(root))
 }
 
 /// The same count for a body wrapped in its pack's scaffold, minus what the scaffold itself
@@ -236,10 +241,11 @@ fn scaffolded(
     grammar: laconic_grammars::Grammar,
     body: &str,
     scaffold: (&'static str, &'static str),
+    is_code: fn(tree_sitter::Node, &str) -> bool,
 ) -> Option<usize> {
     let (prefix, suffix) = scaffold;
-    let empty = parses_as_code(grammar, &format!("{prefix}{suffix}"))?;
-    let full = parses_as_code(grammar, &format!("{prefix}{body}{suffix}"))?;
+    let empty = parses_as_code(grammar, &format!("{prefix}{suffix}"), |_, _| true)?;
+    let full = parses_as_code(grammar, &format!("{prefix}{body}{suffix}"), is_code)?;
     Some(full.saturating_sub(empty))
 }
 

@@ -65,6 +65,8 @@ fn every_claimed_extension_resolves() {
         ("a.mts", "typescript"),
         ("a.cts", "typescript"),
         ("a.swift", "swift"),
+        ("a.sh", "bash"),
+        ("a.bash", "bash"),
     ];
     for (file, pack_name) in expected {
         let (pack, _) = resolve(&packs, Path::new(file)).unwrap_or_else(|| panic!("{file}"));
@@ -77,6 +79,27 @@ fn every_claimed_extension_resolves() {
     assert_ne!(ts, tsx);
     assert_ne!(tsx, js);
     assert_ne!(ts, js);
+}
+
+/// Resolution takes the first pack that claims an extension or an interpreter, so a second claim
+/// would lose in silence to registration order rather than fail anywhere a user could see it.
+#[test]
+fn no_two_packs_claim_the_same_extension_or_interpreter() {
+    let packs = all();
+    let mut extensions = std::collections::BTreeMap::new();
+    let mut interpreters = std::collections::BTreeMap::new();
+    for p in &packs {
+        for (ext, _) in p.extensions() {
+            if let Some(first) = extensions.insert(*ext, p.name()) {
+                panic!("{} and {first} both claim .{ext}", p.name());
+            }
+        }
+        for (name, _) in p.interpreters() {
+            if let Some(first) = interpreters.insert(*name, p.name()) {
+                panic!("{} and {first} both claim the interpreter {name}", p.name());
+            }
+        }
+    }
 }
 
 /// Python's doc comment is not a comment node, and it documents the scope that **contains** it.
@@ -645,4 +668,169 @@ struct ContentView: View {
         .map(|f| f.line)
         .collect();
     assert!(density_lines.contains(&2), "{density_lines:?}");
+}
+
+/// Bash has no doc syntax, so position decides: the file's first prose run documents the file and
+/// a run directly above a function documents the function.
+#[test]
+fn a_bash_header_documents_the_file_and_a_run_above_a_function_documents_it() {
+    let src = "#!/bin/sh\n# Cleans the build directory.\nset -eu\n\n# Removes one target.\n# shellcheck disable=SC2086\nclean() {\n  rm -rf $1\n}\n\n# a note\nclean out\n";
+    let a = analyse_str("x.sh", src);
+
+    let file = block_with(&a, "Cleans the build");
+    assert_eq!(file.kind, CommentKind::Doc);
+    assert!(a.subjects[file.subject.expect("subject")].file_scope);
+
+    let function = block_with(&a, "Removes one target");
+    assert_eq!(function.kind, CommentKind::Doc);
+    assert!(!a.subjects[function.subject.expect("subject")].file_scope);
+
+    assert_eq!(block_with(&a, "a note").kind, CommentKind::Line);
+}
+
+/// A first run directly above a function is the function's, and a run after code is no header.
+#[test]
+fn a_bash_file_header_is_neither_a_function_header_nor_after_code() {
+    let a = analyse_str("x.sh", "#!/bin/sh\n# Builds it.\nbuild() {\n  make\n}\n");
+    let header = block_with(&a, "Builds it");
+    assert_eq!(header.kind, CommentKind::Doc);
+    assert!(!a.subjects[header.subject.expect("subject")].file_scope);
+
+    let a = analyse_str("x.sh", "set -eu\n\n# Not a header.\necho hi\n");
+    assert_eq!(block_with(&a, "Not a header").kind, CommentKind::Line);
+}
+
+/// `#` in a heredoc, a string or a parameter expansion is not a comment: the grammar decides.
+#[test]
+fn a_bash_hash_outside_a_comment_is_not_one() {
+    let src = "#!/bin/sh\necho \"a # b\" '# c' \"${x#y}\" $#\ncat <<EOF\n# d\nEOF\n";
+    assert!(analyse_str("x.sh", src).blocks.is_empty());
+}
+
+/// Shell parses any sentence as a command, so `commentedOutCode` needs shell syntax to fire.
+#[test]
+fn bash_commented_out_code_needs_shell_syntax() {
+    for code in [
+        "rm -rf \"$dir\"",
+        "rm -rf build",
+        "make build | tee log",
+        "x=$(date)",
+        "cut -d: -f1 \"$f\"",
+        "awk -F, '{print $1}' \"$f\"",
+    ] {
+        let src = format!("echo start\n\n# {code}\n\necho end\n");
+        assert!(
+            rules_fired("x.sh", &src).contains(&"commentedOutCode"),
+            "{code:?} is code"
+        );
+    }
+    for prose in [
+        "The directory we clean up.",
+        "Build the image, then push it",
+        "HELPERS",
+        "`--config` rather than discovery: the tree holds no `laconic.toml`",
+        "Run `make -j` first",
+        "A commit message mentioning --amend is message text, not a flag",
+        "$WORK is made a real git repository on a branch with a known name, because",
+        "Both writers have run by now: golangci-lint --fix, and gostandards",
+        "The parent transcript's layout: <session>.jsonl, with each subagent's beside it",
+        "fall back to $HOME when XDG_CONFIG_HOME is unset",
+        "Use -f so a missing file is no error",
+        "maps name -> id",
+        "returns >0 on failure",
+        "fails when A && B",
+        "pass -v for verbose output",
+        "local overrides win over the defaults",
+        "export the variables before sourcing",
+        "unset values fall back to the default",
+        "(see the note above)",
+    ] {
+        let src = format!("echo start\n# {prose}\necho end\n");
+        assert!(
+            !rules_fired("x.sh", &src).contains(&"commentedOutCode"),
+            "{prose:?} is prose"
+        );
+    }
+}
+
+/// `restate` sees what a shell statement binds: an assignment's variable, a command's name. Each
+/// source opens with code, because a file's first comment is its header and `restate` skips docs.
+#[test]
+fn bash_restate_sees_variables_and_commands() {
+    let fired = |body: &str| rules_fired("x.sh", &format!("set -eu\n{body}"));
+    assert!(fired("# output dir\noutput_dir=/tmp\n").contains(&"restate"));
+    assert!(fired("# make\nmake\n").contains(&"restate"));
+    assert!(!fired("# Only on CI runners\nmake\n").contains(&"restate"));
+    assert!(
+        !fired("# output\necho \"$output\"\n").contains(&"restate"),
+        "an argument binds nothing"
+    );
+}
+
+/// The shebang is known by position, so prose that opens with `!` is still judged, and a shebang
+/// with a space after `#!` is still a shebang.
+#[test]
+fn a_bash_comment_opening_with_a_bang_is_not_a_shebang() {
+    let fired = rules_fired("x.sh", "set -eu\n# !!! Changed to use rsync\nrsync a b\n");
+    assert!(fired.contains(&"narration"), "{fired:?}");
+
+    for shebang in ["#! /bin/sh", "#!/bin/sh"] {
+        let src = format!("{shebang}\n# Deploys the app.\nset -e\n");
+        assert!(rules_fired("x.sh", &src).is_empty(), "{shebang:?}");
+        let a = analyse_str("x.sh", &src);
+        assert_eq!(a.blocks.len(), 1, "{shebang:?}");
+        assert_eq!(block_with(&a, "Deploys the app").kind, CommentKind::Doc);
+    }
+}
+
+/// A generator writes the bare markers into its output; only a marker in a shell comment marks the
+/// script itself as generated.
+#[test]
+fn a_bash_generator_is_not_generated() {
+    let src = "#!/bin/sh\ncat > out.go <<EOF\n// Code generated by gen.sh. DO NOT EDIT.\nEOF\n";
+    let packs = all();
+    let path = Path::new("gen.sh");
+    let (pack, grammar) = resolve(&packs, path).unwrap();
+    assert!(analyse(pack, grammar, path, src, &Config::unrestricted()).is_ok());
+}
+
+/// A licence notice is not the file's doc: it stays the licence the engine drops, and the run
+/// below it documents the file.
+#[test]
+fn a_bash_licence_header_is_not_the_file_doc() {
+    let src =
+        "#!/bin/bash\n# Copyright 2024 Acme\n# Licensed under MIT\n\n# Deploys the app.\nset -e\n";
+    let a = analyse_str("x.sh", src);
+    assert_eq!(block_with(&a, "Deploys the app").kind, CommentKind::Doc);
+    assert!(a.blocks.iter().all(|b| !b.body().contains("Copyright")));
+}
+
+/// An extensionless file resolves by its shebang and parses as the pack it names.
+#[test]
+fn an_extensionless_script_resolves_by_its_shebang() {
+    let packs = all();
+    for head in [
+        "#!/bin/sh\n",
+        "#!/bin/bash\n",
+        "#!/usr/bin/env bash\n",
+        "#!/usr/bin/env -S bash -e\n",
+    ] {
+        let (pack, _) = laconic_engine::resolve_shebang(&packs, head.as_bytes())
+            .unwrap_or_else(|| panic!("{head:?}"));
+        assert_eq!(pack.name(), "bash", "{head:?}");
+    }
+    for head in ["#!/usr/bin/env python3\n", "#!/bin/zsh\n", "echo hi\n"] {
+        assert!(
+            laconic_engine::resolve_shebang(&packs, head.as_bytes()).is_none(),
+            "{head:?}"
+        );
+    }
+}
+
+/// Python's shebang is the engine's too, so a comment opening with `!` is prose like any other.
+#[test]
+fn a_python_comment_opening_with_a_bang_is_not_a_shebang() {
+    let fired = rules_fired("x.py", "import os\n\n# !!! changed to use a map\nx = 1\n");
+    assert!(fired.contains(&"narration"), "{fired:?}");
+    assert!(rules_fired("x.py", "#!/usr/bin/env python3\nimport os\n").is_empty());
 }

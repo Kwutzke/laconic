@@ -181,9 +181,10 @@ exclusions cleared and would otherwise scan nothing at all.
 Five units.
 
 **Engine.** Owns the pipeline and nothing about any language. Resolves a pack by file extension,
-parses, extracts comment nodes, groups them into blocks, resolves attachment and kind, builds
-subjects, drops excluded regions, strips machine directives, lifts out ignore directives, dispatches
-to enabled rules, and reconciles suppressions into findings.
+or by shebang for a file with none, parses, extracts comment nodes, groups them into blocks,
+resolves attachment and kind, builds subjects, drops excluded regions, strips machine directives,
+lifts out ignore directives, dispatches to enabled rules, and reconciles suppressions into
+findings.
 
 **Registry.** The rule set as declarations. Each entry carries an id, a **disposition per comment
 kind** — the (tier, fix shape) pair that kind gets, or nothing where the rule does not apply — and a
@@ -324,9 +325,9 @@ unattended.
 
 *Bounded claim:* the thresholds are the specification's initial values, not measurements, and the
 corpus run in section 8 is what turns them into calibrated values. **The values are not repeated
-here.** They live on the constants in `rules/structural.rs` and are asserted in exactly one test;
-restating them in this table is what left it claiming a doc-line cap of fifteen for the whole of the
-session that measured it down to six.
+here.** They live on the constants in `crates/laconic-engine/src/rules/structural.rs` and are
+asserted in exactly one test; restating them in this table is what left it claiming a doc-line
+cap of fifteen for the whole of the session that measured it down to six.
 
 They are **not yet configurable**. Nothing reads a threshold from `laconic.toml`, because there is no
 `laconic.toml` — that is `laconic#9azt`, and until it lands a retune means editing a constant.
@@ -346,9 +347,9 @@ anything under `testdata/`, `fixtures/`, `vendor/`, `node_modules/`.
 
 ## 6. Data flow
 
-`paths → per file: resolve pack by extension → parse → extract comment nodes → group into blocks →
-resolve attachment, kind, subject → drop excluded regions → strip machine directives → lift out
-ignore directives → dispatch → reconcile → report`.
+`paths → per file: resolve pack by extension, or by shebang without one → parse → extract comment
+nodes → group into blocks → resolve attachment, kind, subject → drop excluded regions → strip
+machine directives → lift out ignore directives → dispatch → reconcile → report`.
 
 Two stages carry more than their name. **Dispatch** is per block for twelve rules and per subject
 for `density`. The remaining two never reach dispatch: `ignoreReason` and `deadIgnore` are evaluated
@@ -411,7 +412,8 @@ language override** is a per-language block that re-tiers, disables, or re-confi
 language only; it is the mechanism by which a rule that is right for Go and wrong for Python is
 settled without removing it from the set.)
 
-**An extension with no pack is not an error.** The file is skipped silently. laconic runs over whole
+**A file no pack claims is not an error.** The file is skipped silently, whether its extension is
+unclaimed or, with no extension, its shebang names no interpreter a pack claims. laconic runs over whole
 repositories, and warning on every `.json` and `.md` makes the output unusable.
 
 ## 8. Acceptance criteria

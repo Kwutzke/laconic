@@ -9,12 +9,12 @@
 
 use laconic_engine::{
     Config, Registry, Resolved, Rules, all_block_rules, all_subject_rules, analyse, dispatch, fix,
-    resolve,
+    resolve, resolve_shebang,
 };
 use laconic_packs::all;
 use std::path::{Path, PathBuf};
 
-/// Every source file under `testdata/`, whatever language claims it.
+/// Every source file under `testdata/`, whatever language claims it, by extension or by shebang.
 fn corpus() -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
     let mut out = Vec::new();
@@ -27,7 +27,7 @@ fn corpus() -> Vec<PathBuf> {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.extension().is_some_and(|e| e != "expected") {
+            } else if path.extension().is_none_or(|e| e != "expected") {
                 out.push(path);
             }
         }
@@ -39,7 +39,10 @@ fn corpus() -> Vec<PathBuf> {
 /// One pass: the fixed text, and whether the input parsed clean.
 fn fix_once(path: &Path, src: &str) -> Option<(String, bool)> {
     let packs = all();
-    let (pack, grammar) = resolve(&packs, path)?;
+    let (pack, grammar) = match path.extension() {
+        Some(_) => resolve(&packs, path)?,
+        None => resolve_shebang(&packs, src.as_bytes())?,
+    };
     let analysis = analyse(pack, grammar, path, src, &Config::unrestricted()).ok()?;
     let rules = Rules {
         block: all_block_rules(),
@@ -348,6 +351,13 @@ fn blank_line_handling_is_the_packs_answer() {
         fixed("x.py", py),
         "def f():\n    n = 1\n\n\n    return n\n",
         "Python leaves the surrounding blanks"
+    );
+
+    let sh = "n=1\n\n# changed to use a map\n\necho \"$n\"\n";
+    assert_eq!(
+        fixed("x.sh", sh),
+        "n=1\n\necho \"$n\"\n",
+        "bash collapses the run"
     );
 }
 

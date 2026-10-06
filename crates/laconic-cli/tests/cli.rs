@@ -174,7 +174,73 @@ fn an_unclaimed_extension_is_silent() {
     assert_eq!(run.stdout, "", "an unclaimed extension produced output");
 }
 
-/// A file laconic cannot read is named, and the run carries on over the rest.
+/// An extensionless file is claimed by its shebang or not at all, and every way of not being claimed
+/// is as silent as an unclaimed extension: no shebang, an interpreter no pack claims, binary
+/// content, a file that cannot be opened, a FIFO that would block the open. A shebang does not
+/// override an extension either.
+#[test]
+fn an_extensionless_file_no_shebang_claims_is_silent() {
+    let dir = tempdir("unclaimed-shebang");
+    write(&dir, "plain", "//////// not code\n");
+    write(&dir, "tool", "#!/usr/bin/env python3\n# ======== \n");
+    write(&dir, "zshrc", "#!/bin/zsh\n# ======== \n");
+    write(&dir, "notes.txt", "#!/bin/sh\n# ======== \n");
+    std::fs::write(dir.join("blob"), [0x23, 0x21, 0xff, 0xfe, 0x00, 0x0a]).expect("write");
+    let locked = dir.join("locked");
+    std::fs::write(&locked, "#!/bin/sh\n# ======== \n").expect("write");
+    set_mode(&locked, 0o000);
+    // Root opens a mode-000 file anyway, and then it is simply a claimed script.
+    if std::fs::File::open(&locked).is_ok() {
+        std::fs::remove_file(&locked).expect("remove");
+    }
+    let made = Command::new("mkfifo")
+        .arg(dir.join("pipe"))
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success());
+
+    let run = laconic(&dir, &["check", "--no-config"]);
+    if locked.exists() {
+        set_mode(&locked, 0o644);
+    }
+    assert_eq!(run.code, 0, "stderr was {}", run.stderr);
+    assert_eq!(run.stdout, "", "an unclaimed file produced output");
+}
+
+fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).expect("chmod");
+}
+
+/// An extensionless script is claimed by its shebang, and `fix` rewrites it in place: a hook it
+/// edits is still a hook that runs.
+#[test]
+fn an_extensionless_script_is_linted_and_fixed_by_its_shebang() {
+    let dir = tempdir("shebang");
+    let hook = dir.join("pre-commit");
+    std::fs::write(&hook, "#!/bin/sh\nset -eu\n# Changed to use make.\nmake\n").expect("write");
+    set_mode(&hook, 0o755);
+
+    let run = laconic(&dir, &["check", "--no-config"]);
+    assert_eq!(run.code, 1, "stdout was {}", run.stdout);
+    assert!(
+        run.stdout.contains("pre-commit:3:1: gate [narration]"),
+        "{}",
+        run.stdout
+    );
+
+    let run = laconic(&dir, &["fix", "--no-config"]);
+    assert_eq!(run.code, 0, "stdout was {}", run.stdout);
+    assert_eq!(
+        std::fs::read_to_string(&hook).expect("read"),
+        "#!/bin/sh\nset -eu\nmake\n"
+    );
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(&hook).expect("stat").permissions().mode();
+    assert_eq!(mode & 0o777, 0o755, "fix dropped the executable bit");
+}
+
+/// A file a pack claims and laconic cannot read is named, and the run carries on over the rest.
 ///
 /// The opposite of the config aborts above, deliberately: a file is data and a config is
 /// instructions. So this reports per file rather than stopping, and the finding on the file beside
@@ -256,8 +322,8 @@ fn an_unknown_command_exits_two() {
 
 /// A mistyped **short** flag is an error too, and this is the case that was not.
 ///
-/// `-q` fell through to the path arm; a path with no extension resolves no pack and is skipped in
-/// silence, which is right for `data.json` and wrong for a flag. The run scanned nothing and exited
+/// `-q` fell through to the path arm; a path no pack claims is skipped in silence, which is right
+/// for `data.json` and wrong for a flag. The run scanned nothing and exited
 /// 0, so a hook or a CI step with a typo in it reported a clean tree.
 #[test]
 fn a_mistyped_short_flag_exits_two_rather_than_reporting_clean() {

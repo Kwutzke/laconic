@@ -6,7 +6,7 @@
 //! list against itself; and each container table must classify every child its container can hold.
 
 use crate::common::Container;
-use crate::{go, java, python, rust, swift, typescript};
+use crate::{bash, go, java, python, rust, swift, typescript};
 use laconic_grammars::Grammar;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -22,6 +22,7 @@ fn lists() -> Vec<(&'static str, &'static str, &'static [&'static str])> {
         ("rust", "NON_STATEMENTS", rust::NON_STATEMENTS),
         ("java", "COMMENT_KINDS", java::COMMENT_KINDS),
         ("swift", "COMMENT_KINDS", swift::COMMENT_KINDS),
+        ("bash", "COMMENT_KINDS", bash::COMMENT_KINDS),
         ("typescript", "COMMENT_KINDS", typescript::COMMENT_KINDS),
         (
             "typescript",
@@ -131,6 +132,7 @@ fn tables() -> Vec<(&'static str, &'static [Container])> {
         ("python", python::CONTAINERS),
         ("rust", rust::CONTAINERS),
         ("swift", swift::CONTAINERS),
+        ("bash", bash::CONTAINERS),
         ("typescript", typescript::CONTAINERS),
     ]
 }

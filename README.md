@@ -128,17 +128,31 @@ the container and the kind. That matters because a missed declaration kind leave
 above it an ordinary comment, which `laconic fix` may delete; a grammar upgrade that adds one to a
 listed container now fails the suite instead.
 
-| Pack | Extensions |
-|---|---|
-| Go | `.go` |
-| Rust | `.rs` |
-| Python | `.py` `.pyi` |
-| Java | `.java` |
-| TypeScript / JavaScript | `.ts` `.mts` `.cts` `.tsx` `.js` `.mjs` `.cjs` `.jsx` |
-| Swift | `.swift` |
+| Pack | Extensions | Interpreters |
+|---|---|---|
+| Go | `.go` | |
+| Rust | `.rs` | |
+| Python | `.py` `.pyi` | |
+| Java | `.java` | |
+| TypeScript / JavaScript | `.ts` `.mts` `.cts` `.tsx` `.js` `.mjs` `.cjs` `.jsx` | |
+| Swift | `.swift` | |
+| Bash, and POSIX sh | `.sh` `.bash` | `bash` `sh` |
 
-An extension no pack claims produces no output and is not an error — laconic runs over whole
-repositories, and a line per `.json` would make the findings unreadable.
+**A file with no extension is claimed by its shebang.** `hooks/pre-commit` opening `#!/bin/sh` or
+`#!/usr/bin/env bash` is a bash file; the program is matched by name, after `env` and its flags.
+Only an extensionless file is read for one: a `.txt` file opening with a shebang stays unclaimed,
+because the extension decides whenever there is one.
+
+A file no pack claims produces no output and is not an error — laconic runs over whole repositories,
+and a line per `.json` would make the findings unreadable.
+
+Bash has no doc syntax, so position decides. A comment run directly above a function documents it,
+and otherwise the file's first comment run that is neither only directives nor a licence notice
+documents the file, when no code precedes it. Shell parses any sentence as a command, so
+`commentedOutCode` fires on a bash comment only where it carries shell syntax and does not read as a
+sentence — an English function word such as `the` or `when`, a clause ending in `.` or `,`, or an
+arrow makes it prose. `fileref` does not fire in a bash file: a script is named by its path, so
+there is no symbol to replace one with.
 
 Comments come from the parse tree, never from a regex over raw bytes, which would match inside
 string literals. Which node types carry comments is a pack's business: there is no node type common
@@ -203,9 +217,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p laconic-cli -- check .
 ```
 
-Every rule has positive and negative fixtures under `testdata/<lang>/<rule>/`, and every carve-out
-in every pack has an explicit negative test — a rule that fires on a machine-parsed directive gets
-the linter disabled on day one, so each carve-out is written before the rule it protects.
+Every rule has positive and negative fixtures under `testdata/<lang>/<rule>/`. A rule a pack
+switches off by declaration has the negative alone, listed with its reason in the fixture runner's
+`CANNOT_FIRE`. Every carve-out in every pack has an explicit negative test — a rule that fires on a
+machine-parsed directive gets the linter disabled on day one, so each carve-out is written before
+the rule it protects.
 
 ## Licence
 

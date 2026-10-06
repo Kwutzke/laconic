@@ -26,7 +26,9 @@ pub use domain::{
 pub use exclude::Config;
 pub use fix::fix;
 pub use pack::{BlankLinePolicy, DocComment, Pack};
-pub use pipeline::{FileAnalysis, Skipped, analyse, resolve};
+pub use pipeline::{
+    FileAnalysis, Skipped, analyse, is_shebang, resolve, resolve_file, resolve_shebang,
+};
 pub use registry::{Dispatch, Disposition, ErrorPolicy, FixShape, Registry, RuleEntry, Tier};
 pub use report::{
     EXIT_CLEAN, EXIT_GATE, EXIT_USAGE, Finding, Report, UnreadableFile, WithheldNote,

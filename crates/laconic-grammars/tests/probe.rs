@@ -23,7 +23,7 @@ fn source(g: Grammar) -> &'static str {
 /// The comment node kinds a pack extracts for this grammar — concern 2.
 fn comment_kinds(g: Grammar) -> &'static [&'static str] {
     match g {
-        Grammar::Go | Grammar::Python => &["comment"],
+        Grammar::Go | Grammar::Python | Grammar::Bash => &["comment"],
         Grammar::Rust | Grammar::Java => &["line_comment", "block_comment"],
         Grammar::TypeScript | Grammar::Tsx | Grammar::JavaScript => &["comment", "html_comment"],
         Grammar::Swift => &["comment", "multiline_comment"],
@@ -123,6 +123,7 @@ fn comment_node_kinds_are_grammar_truth() {
         (Grammar::Tsx, &["comment", "html_comment"]),
         (Grammar::JavaScript, &["comment", "html_comment"]),
         (Grammar::Swift, &["comment", "multiline_comment"]),
+        (Grammar::Bash, &["comment"]),
     ];
 
     assert_eq!(expected.len(), Grammar::ALL.len(), "a grammar is missing");
@@ -199,7 +200,12 @@ fn pinned_grammars_span_two_abi_versions() {
 /// stated, where a hand-written list would leave it unasserted and the suite green.
 fn expected_abi(g: Grammar) -> usize {
     match g {
-        Grammar::Go | Grammar::Python | Grammar::Rust | Grammar::JavaScript | Grammar::Swift => 15,
+        Grammar::Go
+        | Grammar::Python
+        | Grammar::Rust
+        | Grammar::JavaScript
+        | Grammar::Swift
+        | Grammar::Bash => 15,
         Grammar::Java | Grammar::TypeScript | Grammar::Tsx => 14,
     }
 }
@@ -307,6 +313,12 @@ fn expected_kinds(g: Grammar) -> &'static [(&'static str, Kind)] {
             ("// MARK: - Probe", Kind::Line),
             ("/// Documents an exported function.", Kind::Line),
             ("/**\n * Documents an exported struct.", Kind::Block),
+        ],
+        // Like Python: one `comment` kind and no block form, so the shebang is Line too.
+        Grammar::Bash => &[
+            ("#!/usr/bin/env bash", Kind::Line),
+            ("# a line comment", Kind::Line),
+            ("# shellcheck disable=SC2034", Kind::Line),
         ],
     }
 }
@@ -674,6 +686,7 @@ fn statement_case(g: Grammar) -> Option<(&'static str, &'static str, &'static st
         Grammar::Tsx => Some(("function_declaration", "Component", "statement_block", 3)),
         Grammar::JavaScript => Some(("function_declaration", "exported", "statement_block", 3)),
         Grammar::Swift => Some(("function_declaration", "exported", "statements", 3)),
+        Grammar::Bash => Some(("function_definition", "exported", "compound_statement", 3)),
         Grammar::Python => None,
     }
 }

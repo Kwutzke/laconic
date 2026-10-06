@@ -451,3 +451,32 @@ fn one_comment_run_is_reported_once_across_nested_subjects() {
         density.iter().map(|f| &f.instruction).collect::<Vec<_>>()
     );
 }
+
+/// Concern 14 reaches `commentedOutCode`: a pack that does not read a clean parse as code silences
+/// the rule on the same body the default reports.
+#[test]
+fn a_packs_code_judgment_decides_commented_out_code() {
+    let src = "package x\n\nfunc f() {\n\t// y := a + 1\n\tz := 2\n\t_ = z\n}\n";
+    let rules = || Rules {
+        block: laconic_engine::all_block_rules(),
+        subject: Vec::new(),
+    };
+    let fired = |a: &FileAnalysis| {
+        let (findings, _) = dispatch(
+            Path::new("x.go"),
+            src,
+            a,
+            &Resolved::from(Registry::default()),
+            &rules(),
+        );
+        findings.iter().any(|f| f.rule == "commentedOutCode")
+    };
+
+    let (mut a, _) = analysis(src);
+    assert!(fired(&a), "the default judgment reads `y := a + 1` as code");
+    a.is_code = |_, _| false;
+    assert!(
+        !fired(&a),
+        "a pack that reads nothing as code still got the finding"
+    );
+}

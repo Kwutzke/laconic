@@ -1,0 +1,6 @@
+#!/bin/sh
+# Rebuilds before every commit.
+set -eu
+
+# Changed to use make instead of a loop.
+make build
